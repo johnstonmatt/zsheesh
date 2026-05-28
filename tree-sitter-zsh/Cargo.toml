@@ -1,0 +1,27 @@
+[package]
+name = "tree-sitter-zsh"
+version = "0.1.0"
+edition = "2021"
+description = "Zsh grammar for tree-sitter (forked from tree-sitter-bash)"
+license = "MIT"
+build = "bindings/rust/build.rs"
+include = [
+  "bindings/rust/*",
+  "grammar.js",
+  "src/*",
+  "tree-sitter.json",
+  "Cargo.toml",
+]
+
+[lib]
+name = "tree_sitter_zsh"
+path = "bindings/rust/lib.rs"
+
+[dependencies]
+tree-sitter-language = "0.1"
+
+[dev-dependencies]
+tree-sitter = "0.25"
+
+[build-dependencies]
+cc = "1.1"

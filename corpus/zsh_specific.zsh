@@ -22,5 +22,5 @@ print -P "%F{red}colored%f"
 ls *.txt
 
 # Arithmetic
-(( count++ ))
-(( result = a + b * c ))
+((count++))
+((result = a + b * c))

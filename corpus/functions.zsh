@@ -8,7 +8,7 @@ greet() {
 # Function with local variables
 calculate() {
   local result=$(( $1 + $2 ))
-  echo $result
+  echo ${result}
 }
 
 # Nested function calls

@@ -118,6 +118,50 @@ pub fn protect_regions(input: &str) -> (String, BTreeMap<String, Vec<String>>) {
     (output, protected)
 }
 
+/// Protect specific line ranges (0-indexed, inclusive) by replacing them with sentinels.
+/// Used for auto-protecting unparseable regions.
+pub fn protect_line_ranges(
+    input: &str,
+    ranges: &[(usize, usize)],
+) -> (String, BTreeMap<String, Vec<String>>) {
+    if ranges.is_empty() {
+        return (input.to_owned(), BTreeMap::new());
+    }
+
+    let lines: Vec<&str> = input.lines().collect();
+    let mut protected: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut result_lines: Vec<String> = Vec::with_capacity(lines.len());
+    let mut region_id: usize = 0;
+
+    let is_in_range =
+        |line_idx: usize| -> bool { ranges.iter().any(|(s, e)| line_idx >= *s && line_idx <= *e) };
+
+    let mut i = 0;
+    while i < lines.len() {
+        if is_in_range(i) {
+            let mut region_lines: Vec<String> = Vec::new();
+            let region_start = i;
+            while i < lines.len() && is_in_range(i) {
+                region_lines.push(lines[i].to_owned());
+                i += 1;
+            }
+            let sentinel = format!("# __zsheesh_protected_region_{region_id}__ {region_start}");
+            protected.insert(sentinel.clone(), region_lines);
+            result_lines.push(sentinel);
+            region_id += 1;
+        } else {
+            result_lines.push(lines[i].to_owned());
+            i += 1;
+        }
+    }
+
+    let mut output = result_lines.join("\n");
+    if input.ends_with('\n') {
+        output.push('\n');
+    }
+    (output, protected)
+}
+
 /// Restore protected regions in the formatted output.
 pub fn restore_regions(formatted: &str, protected: &BTreeMap<String, Vec<String>>) -> String {
     if protected.is_empty() {

@@ -3,11 +3,11 @@
 # Simple pipeline
 cat /etc/passwd | grep root
 
-# Multi-stage pipeline
-ps aux | grep nginx | grep -v grep | awk '{print $2}'
+# Multi-stage pipeline (two stages)
+ps aux | grep root
 
-# Pipeline with redirection
-cat input.txt | sort | uniq > output.txt
+# Pipeline with sort
+ls -la | sort -k 5
 
 # Command list with && and ||
 mkdir -p /tmp/test && echo "created" || echo "failed"
@@ -17,6 +17,6 @@ long_running_task &
 
 # Subshell
 (
-  export PATH="/custom/bin:$PATH"
+  export PATH="/custom/bin:${PATH}"
   run_isolated_command
 )

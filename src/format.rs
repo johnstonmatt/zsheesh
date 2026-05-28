@@ -62,7 +62,7 @@ impl ZshFormatter {
     }
 
     pub fn with_indent(indent: &str) -> Result<Self, ZshFormatterError> {
-        let grammar = topiary_tree_sitter_facade::Language::from(tree_sitter_bash::LANGUAGE);
+        let grammar = topiary_tree_sitter_facade::Language::from(tree_sitter_zsh::LANGUAGE);
         let query = TopiaryQuery::new(&grammar, ZSH_QUERY)
             .map_err(|e| ZshFormatterError::Query(e.to_string()))?;
         let language = Language {
@@ -77,8 +77,8 @@ impl ZshFormatter {
     pub fn check_parse_errors(&self, input: &str) -> Vec<ParseErrorInfo> {
         let mut parser = tree_sitter::Parser::new();
         parser
-            .set_language(&tree_sitter_bash::LANGUAGE.into())
-            .expect("bash grammar is valid");
+            .set_language(&tree_sitter_zsh::LANGUAGE.into())
+            .expect("zsh grammar is valid");
 
         let Some(tree) = parser.parse(input, None) else {
             return vec![ParseErrorInfo {
@@ -97,6 +97,42 @@ impl ZshFormatter {
         let mut errors = Vec::new();
         collect_errors(root, &lines, &mut errors);
         errors
+    }
+
+    /// Returns line ranges (0-indexed, inclusive) of top-level statements that
+    /// contain parse errors. Used for auto-protecting unparseable regions.
+    pub fn error_line_ranges(&self, input: &str) -> Vec<(usize, usize)> {
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_zsh::LANGUAGE.into())
+            .expect("zsh grammar is valid");
+
+        let Some(tree) = parser.parse(input, None) else {
+            let line_count = input.lines().count();
+            return vec![(0, line_count.saturating_sub(1))];
+        };
+
+        let root = tree.root_node();
+        if !root.has_error() {
+            return vec![];
+        }
+
+        let mut ranges = Vec::new();
+        collect_error_ranges(root, &mut ranges);
+
+        // Merge overlapping ranges
+        ranges.sort();
+        let mut merged: Vec<(usize, usize)> = Vec::new();
+        for (start, end) in ranges {
+            if let Some(last) = merged.last_mut()
+                && start <= last.1 + 1
+            {
+                last.1 = last.1.max(end);
+                continue;
+            }
+            merged.push((start, end));
+        }
+        merged
     }
 
     pub fn format_str(&self, input: &str) -> Result<String, ZshFormatterError> {
@@ -155,6 +191,27 @@ impl ZshFormatter {
 impl Default for ZshFormatter {
     fn default() -> Self {
         Self::new().expect("default formatter should initialize")
+    }
+}
+
+fn collect_error_ranges(node: tree_sitter::Node, ranges: &mut Vec<(usize, usize)>) {
+    if node.is_error() || node.is_missing() {
+        // Walk up to the nearest top-level statement (child of `program`)
+        let mut ancestor = node;
+        while let Some(parent) = ancestor.parent() {
+            if parent.kind() == "program" {
+                break;
+            }
+            ancestor = parent;
+        }
+        let start = ancestor.start_position().row;
+        let end = ancestor.end_position().row;
+        ranges.push((start, end));
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_error_ranges(child, ranges);
     }
 }
 

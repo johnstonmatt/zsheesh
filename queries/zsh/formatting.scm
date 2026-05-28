@@ -1,6 +1,6 @@
 ; zsheesh formatting rules for zsh
 ; Based on Topiary's bash formatting queries, extended for zsh constructs.
-; Uses tree-sitter-bash as the parser (covering ~80% of shared grammar).
+; Uses tree-sitter-zsh (forked from tree-sitter-bash, extended with zsh syntax).
 
 ; Leaves: nodes whose content must not be reformatted.
 [
@@ -472,7 +472,7 @@
 ) @append_hardline
 
 (case_item
-  ")" @append_spaced_softline @append_indent_start
+  ")" @append_hardline @append_indent_start
 ) @append_indent_end
 
 (case_item

@@ -1,0 +1,29 @@
+{
+  "grammars": [
+    {
+      "name": "zsh",
+      "camelcase": "Zsh",
+      "scope": "source.zsh",
+      "path": ".",
+      "file-types": [
+        "zsh",
+        ".zshrc",
+        ".zshenv",
+        ".zprofile",
+        ".zlogin",
+        ".zlogout"
+      ],
+      "injection-regex": "^zsh$",
+      "first-line-regex": "^#!.*\\bzsh\\b.*$"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Zsh grammar for tree-sitter (forked from tree-sitter-bash)"
+  },
+  "bindings": {
+    "c": true,
+    "rust": true
+  }
+}
