@@ -2,15 +2,21 @@
 
 A zsh-aware code formatter, written in Rust.
 
-## Why
+## Install
 
-There is no working zsh formatter today. The de facto shell formatter, [shfmt](https://github.com/mvdan/sh), explicitly rejects zsh — its maintainer has closed every zsh-support issue because zsh's grammar diverges from bash/POSIX and has no formal spec. Every other shell formatter (beautysh, shellharden, prettier-plugin-sh) defers to bash semantics and breaks on the same constructs.
+### Shell (macOS / Linux)
 
-This matters because:
+```sh
+curl -fsSL https://raw.githubusercontent.com/johnstonmatt/zsheesh/main/install.sh | sh
+```
 
-- macOS has shipped zsh as the default shell since 2019 (Catalina), driven by Apple's avoidance of GPLv3 bash. The tooling ecosystem did not follow.
-- Real zsh configs use constructs bash parsers cannot represent: parameter-expansion flags (`${(k)var}`, `${(@)var}`), glob qualifiers (`*(.om[1])`), anonymous functions, `typeset -gA`, `setopt`, `print -r --`.
-- The community workaround — "write interactive config in zsh, scripts in bash" — leaves interactive configs hand-formatted, stylistically divergent, and untooled.
+Downloads a pre-built binary from [GitHub Releases](https://github.com/johnstonmatt/zsheesh/releases) for your platform.
+
+### Cargo (build from source)
+
+```sh
+cargo install --git https://github.com/johnstonmatt/zsheesh
+```
 
 ## Usage
 
@@ -53,6 +59,16 @@ this block
 
 Files with parse errors are skipped to prevent destructive formatting. Use `--force` to override.
 
+## Why
+
+There is no working zsh formatter today. The de facto shell formatter, [shfmt](https://github.com/mvdan/sh), explicitly rejects zsh — its maintainer has closed every zsh-support issue because zsh's grammar diverges from bash/POSIX and has no formal spec. Every other shell formatter (beautysh, shellharden, prettier-plugin-sh) defers to bash semantics and breaks on the same constructs.
+
+This matters because:
+
+- macOS has shipped zsh as the default shell since 2019 (Catalina), driven by Apple's avoidance of GPLv3 bash. The tooling ecosystem did not follow.
+- Real zsh configs use constructs bash parsers cannot represent: parameter-expansion flags (`${(k)var}`, `${(@)var}`), glob qualifiers (`*(.om[1])`), anonymous functions, `typeset -gA`, `setopt`, `print -r --`.
+- The community workaround — "write interactive config in zsh, scripts in bash" — leaves interactive configs hand-formatted, stylistically divergent, and untooled.
+
 ## How it works
 
 zsheesh = a dedicated tree-sitter grammar + the Topiary formatter framework, glued together in Rust.
@@ -88,22 +104,6 @@ zsheesh/
     ├── patch-grammar.js      zsh-specific grammar patches
     ├── sync-from-bash.sh     rebuild grammar from a new bash version
     └── src/                  generated C parser
-```
-
-## Getting started
-
-```sh
-git clone https://github.com/johnstonmatt/zsheesh
-cd zsheesh
-cargo build
-cargo test
-```
-
-Or run without building first:
-
-```sh
-cargo run -- ~/.zshrc
-cargo run -- -w .
 ```
 
 ## Success criteria
