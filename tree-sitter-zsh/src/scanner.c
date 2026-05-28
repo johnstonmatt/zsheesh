@@ -424,6 +424,10 @@ static bool scan(Scanner *scanner, TSLexer *lexer, const bool *valid_symbols) {
             if (lexer->lookahead == '}') {
                 return true;
             }
+            // zsh: ${#${nested}} — allow # before nested expansion
+            if (lexer->lookahead == '$') {
+                return true;
+            }
             return false;
         }
     }

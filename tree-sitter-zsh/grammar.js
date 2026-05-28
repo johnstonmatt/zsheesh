@@ -52,6 +52,7 @@ module.exports = grammar({
     [$.redirected_statement, $.command_substitution],
     [$.function_definition, $.command_name],
     [$.pipeline],
+    [$.zsh_flags_expansion, $._expansion_regex],
   ],
 
   inline: $ => [
@@ -188,6 +189,8 @@ module.exports = grammar({
             $.heredoc_redirect,
           )),
         )),
+        // zsh: cmd &>/dev/null <<< "input" — herestring after other redirects
+        optional($.herestring_redirect),
       ),
       seq(
         field('body', choice($.if_statement, $.while_statement)),
@@ -197,15 +200,28 @@ module.exports = grammar({
       $.herestring_redirect,
     ))),
 
-    for_statement: $ => seq(
-      choice('for', 'select'),
-      field('variable', $._simple_variable_name),
-      optional(seq(
-        'in',
-        field('value', repeat1($._literal)),
+    for_statement: $ => choice(
+      seq(
+        choice('for', 'select'),
+        // zsh: for k v in list — multiple loop variables
+        repeat1(field('variable', $._simple_variable_name)),
+        optional(seq(
+          'in',
+          field('value', repeat1($._literal)),
+        )),
+        $._terminator,
+        field('body', $.do_group),
+      ),
+      // zsh: for var (list); do ... done
+      prec(1, seq(
+        'for',
+        field('variable', $._simple_variable_name),
+        '(',
+        field('value', repeat($._literal)),
+        ')',
+        optional($._terminator),
+        field('body', $.do_group),
       )),
-      $._terminator,
-      field('body', $.do_group),
     ),
 
     c_style_for_statement: $ => seq(
@@ -304,7 +320,7 @@ module.exports = grammar({
 
     if_statement: $ => seq(
       'if',
-      field('condition', $._terminated_statement),
+      field('condition', choice($._terminated_statement, $._statement)),
       'then',
       optional($._terminated_statement),
       repeat($.elif_clause),
@@ -314,7 +330,7 @@ module.exports = grammar({
 
     elif_clause: $ => seq(
       'elif',
-      $._terminated_statement,
+      choice($._terminated_statement, $._statement),
       'then',
       optional($._terminated_statement),
     ),
@@ -362,28 +378,43 @@ module.exports = grammar({
       optional(prec(1, ';;')),
     ),
 
-    function_definition: $ => prec.right(seq(
-      choice(
-        seq(
-          'function',
-          field('name', $.word),
-          optional(seq('(', ')')),
-        ),
-        seq(
-          field('name', $.word),
-          '(', ')',
-        ),
-      ),
-      field(
-        'body',
+    function_definition: $ => prec.right(choice(
+      seq(
         choice(
-          $.compound_statement,
-          $.subshell,
-          $.test_command,
-          $.if_statement,
+          seq(
+            'function',
+            // zsh: function can define multiple names: function name1 name2 { }
+            repeat1(field('name', $.word)),
+            optional(seq('(', ')')),
+          ),
+          seq(
+            field('name', $.word),
+            '(', ')',
+          ),
         ),
+        field(
+          'body',
+          choice(
+            $.compound_statement,
+            $.subshell,
+            $.test_command,
+            $.if_statement,
+          ),
+        ),
+        field('redirect', optional($._redirect)),
       ),
-      field('redirect', optional($._redirect)),
+      // zsh: function { body } — anonymous function (no name)
+      prec(-1, seq(
+        'function',
+        field(
+          'body',
+          choice(
+            $.compound_statement,
+            $.subshell,
+          ),
+        ),
+        field('redirect', optional($._redirect)),
+      )),
     )),
 
     compound_statement: $ => choice(
@@ -391,6 +422,13 @@ module.exports = grammar({
         '{',
         optional($._terminated_statement),
         token(prec(-1, '}')),
+        // zsh: optional always block
+        optional(seq(
+          'always',
+          '{',
+          optional($._terminated_statement),
+          token(prec(-1, '}')),
+        )),
       ),
       seq(
         '((',
@@ -516,20 +554,22 @@ module.exports = grammar({
 
     variable_assignments: $ => seq($.variable_assignment, repeat1($.variable_assignment)),
 
-    subscript: $ => seq(
+    subscript: $ => prec.left(seq(
       field('name', $.variable_name),
       '[',
+      // zsh: optional subscript flag like (r), (i), (I), (k), (K), (R), (Ie), (Re)
+      optional(/\([a-zA-Z]+\)/),
       field('index', choice($._literal, $.binary_expression, $.unary_expression, $.compound_statement, $.subshell)),
       optional($._concat),
       ']',
       optional($._concat),
-    ),
+    )),
 
     file_redirect: $ => prec.left(seq(
       field('descriptor', optional($.file_descriptor)),
       choice(
         seq(
-          choice('<', '>', '>>', '&>', '&>>', '<&', '>&', '>|'),
+          choice('<', '>', '>>', '&>', '&>>', '<&', '>&', '>|', '>!'),
           field('destination', repeat1($._literal)),
         ),
         seq(
@@ -872,6 +912,10 @@ module.exports = grammar({
         $.variable_name,
         alias('!', $.special_variable_name),
         alias('#', $.special_variable_name),
+        // zsh: $+var checks if var is set (returns 0/1)
+        seq('+', choice($._simple_variable_name, $.variable_name, $.subscript)),
+        // zsh: $#var gives length of var (higher prec so $#remotes is one unit)
+        prec(1, seq('#', choice($._simple_variable_name, $.variable_name))),
       ),
     ),
 
@@ -895,7 +939,8 @@ module.exports = grammar({
         ),
       )),
       seq(
-        optional(field('operator', token.immediate('!'))),
+        // zsh: !, +, = operators on expansion body
+        optional(field('operator', choice(token.immediate('!'), token.immediate('+'), token.immediate('=')))),
         choice($.variable_name, $._simple_variable_name, $._special_variable_name, $.subscript),
         choice(
           $._expansion_expression,
@@ -904,7 +949,60 @@ module.exports = grammar({
           $._expansion_regex_removal,
           $._expansion_max_length,
           $._expansion_operator,
+          $._zsh_expansion_modifier,
         ),
+      ),
+      // zsh: ${@[idx]}, ${*[idx]} — special variable with subscript
+      seq(
+        $._special_variable_name,
+        '[',
+        field('index', choice($._literal, $.binary_expression, $.unary_expression)),
+        ']',
+        optional(choice(
+          $._expansion_expression,
+          $._expansion_regex,
+          $._expansion_regex_replacement,
+          $._expansion_regex_removal,
+          $._expansion_max_length,
+          $._expansion_operator,
+          $._zsh_expansion_modifier,
+        )),
+      ),
+      // zsh: ${#${nested}} — length of nested expansion
+      seq(
+        alias($._external_expansion_sym_hash, '#'),
+        choice($.expansion, $.command_substitution),
+      ),
+      // zsh: ${^var}, ${~var} — distribute/glob prefix operators
+      seq(
+        field('operator', choice(token.immediate('^'), token.immediate('~'))),
+        choice($.variable_name, $._simple_variable_name, $._special_variable_name, $.subscript,
+               $.expansion, $.command_substitution),
+        optional(choice(
+          $._expansion_expression,
+          $._expansion_regex,
+          $._expansion_regex_replacement,
+          $._expansion_regex_removal,
+          $._expansion_max_length,
+          $._expansion_operator,
+          $._zsh_expansion_modifier,
+        )),
+      ),
+      // zsh: nested parameter expansion ${${VAR:-default}:-fallback}
+      // also: ${$(cmd)#pattern}, ${"string"#pattern}, ${${(Az)VAR}[idx]}
+      seq(
+        choice($.expansion, $.command_substitution, $.string),
+        // zsh: optional subscript on nested expansion like ${${var}[-1]}
+        optional(seq('[', field('index', choice($._literal, $.binary_expression, $.unary_expression)), ']')),
+        optional(choice(
+          $._expansion_expression,
+          $._expansion_regex,
+          $._expansion_regex_replacement,
+          $._expansion_regex_removal,
+          $._expansion_max_length,
+          $._expansion_operator,
+          $._zsh_expansion_modifier,
+        )),
       ),
       seq(
         field('operator', token.immediate('!')),
@@ -915,7 +1013,8 @@ module.exports = grammar({
         ))),
       ),
       seq(
-        optional(field('operator', immediateLiterals('#', '!', '='))),
+        // zsh: + added to operator set
+        optional(field('operator', immediateLiterals('#', '!', '=', '+'))),
         choice(
           $.subscript,
           $._simple_variable_name,
@@ -938,12 +1037,17 @@ module.exports = grammar({
       token.immediate('('),
       field('flags', $.zsh_expansion_flags),
       ')',
-      choice(
+      optional(choice(
         $._simple_variable_name,
         $._special_variable_name,
         $.variable_name,
         $.subscript,
-      ),
+        $.string,
+        $.command_substitution,
+        $.expansion,
+        // zsh: @ and * as target vars — use prec to beat _expansion_operator
+        prec(2, alias(token.immediate('@'), $.special_variable_name)),
+      )),
       optional(choice(
         $._expansion_expression,
         $._expansion_regex,
@@ -951,19 +1055,34 @@ module.exports = grammar({
         $._expansion_regex_removal,
         $._expansion_max_length,
         $._expansion_operator,
+        $._zsh_expansion_modifier,
       )),
     ),
 
-    // Flag characters (k, v, f, @, …) and key:sep: patterns
+    // Flag characters (k, v, f, @, …) and delimited patterns like s:sep: or s/sep/
     zsh_expansion_flags: $ => repeat1(
       choice(
-        /[a-zA-Z@#%^~]/,
-        seq(/[a-zA-Z]/, ':', /[^:]*/, ':'),
+        /[a-zA-Z@#%^~0-9]/,
+        /[a-zA-Z]:[^:]*:/,
+        /[a-zA-Z]\/[^/]*\//,
       ),
     ),
 
+    // zsh: expansion modifiers — :l :u :h :t :r :e :a :A :P :Q :N :gs/x/y/ :s/x/y/
+    _zsh_expansion_modifier: $ => repeat1(choice(
+      seq(':', choice('l', 'u', 'h', 't', 'r', 'e', 'a', 'A', 'P', 'Q', 'N')),
+      seq(':',
+        choice('gs', 's'),
+        token.immediate('/'),
+        optional(alias(/[^/]*/, $.regex)),
+        '/',
+        optional(alias(/[^/}]*/, $.regex)),
+        optional('/'),
+      ),
+    )),
+
     _expansion_expression: $ => prec(1, seq(
-      field('operator', immediateLiterals('=', ':=', '-', ':-', '+', ':+', '?', ':?')),
+      field('operator', immediateLiterals('=', ':=', '-', ':-', '+', ':+', '?', ':?', ':|', ':*')),
       optional(seq(
         choice(
           alias($._concatenation_in_expansion, $.concatenation),
@@ -981,7 +1100,7 @@ module.exports = grammar({
     )),
 
     _expansion_regex: $ => seq(
-      field('operator', choice('#', alias($._immediate_double_hash, '##'), '%', '%%')),
+      field('operator', choice('#', alias($._immediate_double_hash, '##'), '%', '%%', ':#')),
       repeat(choice(
         $.regex,
         alias(')', $.regex),
@@ -1166,7 +1285,7 @@ module.exports = grammar({
     )),
 
     _c_terminator: _ => choice(';', /\n/, '&'),
-    _terminator: _ => choice(';', ';;', /\n/, '&', '&!'),
+    _terminator: _ => choice(';', ';;', /\n/, '&', '&!', '&|'),
   },
 });
 

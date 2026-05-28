@@ -164,11 +164,11 @@ fn normalizes_function_parens() {
 
 #[test]
 fn formats_function_keyword_style() {
-    // The 'function' keyword should be removed per the query rules
+    // The 'function' keyword is preserved (valid zsh form)
     let input = "function greet {\necho hi\n}\n";
     let result = fmt(input);
     insta::assert_snapshot!(result, @r"
-    greet() {
+    function greet {
       echo hi
     }
     ");
@@ -520,6 +520,311 @@ fn dump_ast_produces_json() {
         result.contains("program") || result.contains("command"),
         "AST dump should contain tree-sitter node types"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Zsh grammar extensions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn zsh_background_disown() {
+    let input = "sleep 10 &|\n";
+    let result = fmt(input);
+    assert!(result.contains("&|"), "Should preserve &| operator: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_force_clobber_redirect() {
+    let input = "echo data >! /tmp/output\n";
+    let result = fmt(input);
+    assert!(result.contains(">!"), "Should preserve >! redirect: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_dollar_plus_var_set_check() {
+    let input = "if (( $+commands[git] )); then\necho yes\nfi\n";
+    let result = fmt(input);
+    assert!(result.contains("$+commands"), "Should parse $+var: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_expansion_plus_operator() {
+    let input = "echo ${+PATH}\n";
+    let result = fmt(input);
+    assert!(result.contains("${+PATH}"), "Should parse ${{+var}}: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_expansion_plus_subscript() {
+    let input = "echo ${+commands[git]}\n";
+    let result = fmt(input);
+    assert!(result.contains("${+commands[git]}"), "Should parse ${{+var[key]}}: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_nested_expansion() {
+    let input = "0=\"${${ZERO:-foo}:-bar}\"\n";
+    let result = fmt(input);
+    assert!(result.contains("${${ZERO:-foo}:-bar}"), "Should handle nested expansion: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_triple_nested_expansion() {
+    let input = "0=\"${${ZERO:-${0:#$ZSH_ARGZERO}}:-${(%):-%N}}\"\n";
+    let result = fmt(input);
+    assert!(result.contains("${${ZERO:-"), "Should handle triple-nested: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_colon_hash_operator() {
+    let input = "echo \"${(M)0:#/*}\"\n";
+    let result = fmt(input);
+    assert!(result.contains(":#"), "Should handle :# operator: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_for_list_short_form() {
+    let input = "for v (a b c); do\necho $v\ndone\n";
+    let result = fmt(input);
+    assert!(result.contains("for"), "Should handle for (list): got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_function_anonymous() {
+    let input = "function {\necho anonymous\n}\n";
+    let result = fmt(input);
+    assert!(result.contains("echo anonymous"), "Should parse anonymous function: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_try_always() {
+    let input = "{\necho try\n} always {\necho cleanup\n}\n";
+    let result = fmt(input);
+    assert!(result.contains("always"), "Should handle try/always: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_flags_with_string_target() {
+    let input = "lines=(${(f)\"$(git status)\"})\n";
+    let result = fmt(input);
+    assert!(result.contains("${(f)"), "Should handle flags with string target: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_flags_with_command_substitution() {
+    let input = "a=(${(@f)\"$(cmd)\"})\n";
+    let result = fmt(input);
+    assert!(result.contains("${(@f)"), "Should handle flags with cmd sub target: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_prompt_expansion_empty_target() {
+    let input = "echo \"${(%):-%N}\"\n";
+    let result = fmt(input);
+    assert!(result.contains("${(%):-%N}"), "Should handle empty target flags: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_gs_modifier() {
+    let input = "echo \"${rvm_prompt:gs/%/%%}\"\n";
+    let result = fmt(input);
+    assert!(result.contains(":gs/%/%%"), "Should handle :gs modifier: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_lowercase_modifier() {
+    let input = "echo ${issue_arg:l}\n";
+    let result = fmt(input);
+    assert!(result.contains(":l"), "Should handle :l modifier: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_flag_separator() {
+    let input = "parts=(${(s:.:)HOST})\n";
+    let result = fmt(input);
+    assert!(result.contains("${(s:.:)HOST}"), "Should handle flag separator: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_dollar_hash_var() {
+    let input = "if (( $#remotes > 0 )); then\necho yes\nfi\n";
+    let result = fmt(input);
+    assert!(result.contains("$#"), "Should handle $#var length: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_equals_flag_expansion() {
+    let input = "echo ${=icon:+--icon \"$icon\"}\n";
+    let result = fmt(input);
+    assert!(result.contains("${=icon"), "Should handle ${{=var}} word split: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_subscript_flag() {
+    let input = "echo ${available_profiles[(r)$1]}\n";
+    let result = fmt(input);
+    assert!(result.contains("[(r)"), "Should handle subscript flag: got {result}");
+    assert_idempotent(&result);
+}
+
+// ---------------------------------------------------------------------------
+// Zsh grammar extensions — session 2
+// ---------------------------------------------------------------------------
+
+#[test]
+fn zsh_caret_distribute_prefix() {
+    let input = "echo ${^PATH}\n";
+    let result = fmt(input);
+    assert!(result.contains("${^PATH}"), "Should handle ${{^var}} distribute: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_caret_distribute_subscript() {
+    let input = "for file in \"${^PYTHON_VENV_NAMES[@]}\"/bin/activate; do\necho $file\ndone\n";
+    let result = fmt(input);
+    assert!(result.contains("${^PYTHON_VENV_NAMES[@]}"), "Should handle ${{^var[@]}}: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_tilde_glob_prefix() {
+    let input = "echo ${~var}\n";
+    let result = fmt(input);
+    assert!(result.contains("${~var}"), "Should handle ${{~var}} glob: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_flag_separator_slash_delimiter() {
+    let input = "echo ${(@s/:/)var}\n";
+    let result = fmt(input);
+    assert!(result.contains("${(@s/:/)var}"), "Should handle s/:/ with / delimiter: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_multichar_subscript_flag() {
+    let input = "if [[ ${tools[(Ie)$TOOL]} -eq 0 ]]; then\necho missing\nfi\n";
+    let result = fmt(input);
+    assert!(result.contains("[(Ie)"), "Should handle multi-char subscript flag (Ie): got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_array_difference_operator() {
+    let input = "bundled=(${bundled:|UNBUNDLED})\n";
+    let result = fmt(input);
+    assert!(result.contains(":|"), "Should handle :| array difference: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_flags_at_target() {
+    let input = "local query=\"${(j:,:)@}\"\n";
+    let result = fmt(input);
+    assert!(result.contains("${(j:,:)@}"), "Should handle flags with @ target: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_nested_expansion_subscript() {
+    let input = "local word=${${(Az)LBUFFER}[-1]}\n";
+    let result = fmt(input);
+    assert!(result.contains("[-1]"), "Should handle nested expansion with subscript: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_string_in_expansion() {
+    let input = "local fzf_ver=${\"$(fzf --version)\"#fzf }\n";
+    let result = fmt(input);
+    assert!(result.contains("${\""), "Should handle string in expansion body: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_command_sub_in_expansion() {
+    let input = "local nvm_prompt=${$(nvm current)#v}\n";
+    let result = fmt(input);
+    assert!(result.contains("${$(nvm current)#v}"), "Should handle cmd sub in expansion: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_length_of_nested_expansion() {
+    let input = "echo ${#${var}}\n";
+    let result = fmt(input);
+    assert!(result.contains("${#${var}}"), "Should handle ${{#${{nested}}}}: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_special_variable_subscript() {
+    let input = "echo ${@[2,-1]}\n";
+    let result = fmt(input);
+    assert!(result.contains("${@[2,-1]}"), "Should handle ${{@[idx]}}: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_for_multiple_variables() {
+    let input = "for k v in a b c d; do\necho $k $v\ndone\n";
+    let result = fmt(input);
+    assert!(result.contains("for k v in"), "Should handle multi-var for loop: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_if_no_semicolon_before_then() {
+    let input = "if [[ -z \"$1\" ]] then\necho hi\nfi\n";
+    let result = fmt(input);
+    assert!(result.contains("then"), "Should handle if [[ ]] then (no ;): got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_function_multi_name() {
+    let input = "function man foo {\necho ok\n}\n";
+    let result = fmt(input);
+    assert!(result.contains("man") && result.contains("foo"), "Should handle multi-name function: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_modifier_uppercase_p() {
+    let input = "echo ${commands[aws]:P}\n";
+    let result = fmt(input);
+    assert!(result.contains(":P"), "Should handle :P modifier: got {result}");
+    assert_idempotent(&result);
+}
+
+#[test]
+fn zsh_redirect_with_herestring() {
+    let input = "command grep -E 'test' &>/dev/null <<< \"$status\"\n";
+    let result = fmt(input);
+    assert!(result.contains("&>/dev/null"), "Should handle &> redirect: got {result}");
+    assert!(result.contains("<<<"), "Should handle <<< herestring: got {result}");
+    assert_idempotent(&result);
 }
 
 // ---------------------------------------------------------------------------

@@ -1087,6 +1087,28 @@
     "type": "expansion",
     "named": true,
     "fields": {
+      "index": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "_primary_expression",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "concatenation",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          }
+        ]
+      },
       "operator": {
         "multiple": true,
         "required": false,
@@ -1152,6 +1174,14 @@
             "named": false
           },
           {
+            "type": ":#",
+            "named": false
+          },
+          {
+            "type": ":*",
+            "named": false
+          },
+          {
             "type": ":+",
             "named": false
           },
@@ -1165,6 +1195,10 @@
           },
           {
             "type": ":?",
+            "named": false
+          },
+          {
+            "type": ":|",
             "named": false
           },
           {
@@ -1225,6 +1259,10 @@
           },
           {
             "type": "u",
+            "named": false
+          },
+          {
+            "type": "~",
             "named": false
           }
         ]
@@ -1336,7 +1374,7 @@
         ]
       },
       "variable": {
-        "multiple": false,
+        "multiple": true,
         "required": true,
         "types": [
           {
@@ -1374,8 +1412,8 @@
         ]
       },
       "name": {
-        "multiple": false,
-        "required": true,
+        "multiple": true,
+        "required": false,
         "types": [
           {
             "type": "word",
@@ -1560,6 +1598,10 @@
           },
           {
             "type": "&!",
+            "named": false
+          },
+          {
+            "type": "&|",
             "named": false
           },
           {
@@ -1870,6 +1912,10 @@
       "types": [
         {
           "type": "special_variable_name",
+          "named": true
+        },
+        {
+          "type": "subscript",
           "named": true
         },
         {
@@ -2342,6 +2388,10 @@
             "named": false
           },
           {
+            "type": "&|",
+            "named": false
+          },
+          {
             "type": ";",
             "named": false
           },
@@ -2438,6 +2488,14 @@
             "named": false
           },
           {
+            "type": ":#",
+            "named": false
+          },
+          {
+            "type": ":*",
+            "named": false
+          },
+          {
             "type": ":+",
             "named": false
           },
@@ -2451,6 +2509,10 @@
           },
           {
             "type": ":?",
+            "named": false
+          },
+          {
+            "type": ":|",
             "named": false
           },
           {
@@ -2518,7 +2580,7 @@
     },
     "children": {
       "multiple": true,
-      "required": true,
+      "required": false,
       "types": [
         {
           "type": "_primary_expression",
@@ -2640,6 +2702,10 @@
     "named": false
   },
   {
+    "type": "&|",
+    "named": false
+  },
+  {
     "type": "(",
     "named": false
   },
@@ -2740,6 +2806,14 @@
     "named": false
   },
   {
+    "type": ":#",
+    "named": false
+  },
+  {
+    "type": ":*",
+    "named": false
+  },
+  {
     "type": ":+",
     "named": false
   },
@@ -2753,6 +2827,10 @@
   },
   {
     "type": ":?",
+    "named": false
+  },
+  {
+    "type": ":|",
     "named": false
   },
   {
@@ -2824,6 +2902,10 @@
     "named": false
   },
   {
+    "type": ">!",
+    "named": false
+  },
+  {
     "type": ">&",
     "named": false
   },
@@ -2873,6 +2955,10 @@
   },
   {
     "type": "L",
+    "named": false
+  },
+  {
+    "type": "N",
     "named": false
   },
   {
@@ -2928,6 +3014,10 @@
     "named": false
   },
   {
+    "type": "always",
+    "named": false
+  },
+  {
     "type": "ansi_c_string",
     "named": true
   },
@@ -2950,6 +3040,10 @@
   },
   {
     "type": "done",
+    "named": false
+  },
+  {
+    "type": "e",
     "named": false
   },
   {
@@ -2989,6 +3083,14 @@
     "named": false
   },
   {
+    "type": "gs",
+    "named": false
+  },
+  {
+    "type": "h",
+    "named": false
+  },
+  {
     "type": "heredoc_content",
     "named": true
   },
@@ -3013,7 +3115,15 @@
     "named": false
   },
   {
+    "type": "l",
+    "named": false
+  },
+  {
     "type": "local",
+    "named": false
+  },
+  {
+    "type": "r",
     "named": false
   },
   {
@@ -3029,6 +3139,10 @@
     "named": true
   },
   {
+    "type": "s",
+    "named": false
+  },
+  {
     "type": "select",
     "named": false
   },
@@ -3039,6 +3153,10 @@
   {
     "type": "string_content",
     "named": true
+  },
+  {
+    "type": "t",
+    "named": false
   },
   {
     "type": "test_operator",

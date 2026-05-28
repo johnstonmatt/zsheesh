@@ -499,20 +499,16 @@ fi
 }
 
 #[test]
-fn e2e_function_keyword_removal() {
+fn e2e_function_keyword_preserved() {
     let input = "function my_func {\necho hello\n}\n";
 
     let (formatted, _, ok) = run_stdin(input);
     assert!(ok);
 
-    // 'function' keyword should be removed, parens added
+    // 'function' keyword should be preserved (valid zsh form)
     assert!(
-        formatted.contains("my_func()"),
-        "function keyword removed: {formatted}"
-    );
-    assert!(
-        !formatted.contains("function my_func"),
-        "function keyword should not remain: {formatted}"
+        formatted.contains("function my_func"),
+        "function keyword should be preserved: {formatted}"
     );
 
     let (second, _, _) = run_stdin(&formatted);

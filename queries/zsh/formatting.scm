@@ -137,7 +137,9 @@
 (compound_statement
   .
   "{" @append_spaced_softline @append_indent_start
-  _
+)
+
+(compound_statement
   "}" @prepend_spaced_softline @prepend_indent_end
   .
 )
@@ -148,6 +150,21 @@
   _
   ")" @prepend_spaced_softline @prepend_indent_end
   .
+)
+
+; zsh: { try } always { cleanup }
+(compound_statement
+  "}" @prepend_spaced_softline @prepend_indent_end
+  .
+  "always"
+)
+(compound_statement
+  "always" @prepend_space @append_space
+)
+(compound_statement
+  "always"
+  .
+  "{" @append_spaced_softline @append_indent_start
 )
 
 ;; Commands — line breaks in various contexts
@@ -325,11 +342,16 @@
   "&" @prepend_space @append_spaced_softline
 )
 
-; Zsh background+disown operator
+; Zsh background+disown operators
 (_
   [(command) (list) (pipeline) (compound_statement) (subshell) (redirected_statement)]
   .
   "&!" @prepend_space @append_spaced_softline
+)
+(_
+  [(command) (list) (pipeline) (compound_statement) (subshell) (redirected_statement)]
+  .
+  "&|" @prepend_space @append_spaced_softline
 )
 
 ; Spaces between command and its arguments
@@ -505,6 +527,16 @@
   value: _* @prepend_space
 )
 
+; zsh: for k v in list — space between multiple loop variables
+(for_statement
+  variable: (variable_name) @prepend_space
+)
+
+; zsh: for var (list) — space before (
+(for_statement
+  "(" @prepend_space
+)
+
 (c_style_for_statement
   initializer: _ @prepend_space
   update: _ @append_space
@@ -524,21 +556,16 @@
   body: (_) @prepend_space @append_hardline
 )
 
+; function keyword needs space after it
 (function_definition
-  .
-  (word) @append_delimiter
-  .
-  (
-    "("
-    ")"
-  )? @do_nothing
-
-  (#delimiter! "()")
+  "function" @append_space
 )
 
+; Space between consecutive function name words (zsh multi-name: function a b { })
 (function_definition
+  (word)
   .
-  "function" @delete
+  (word) @prepend_space
 )
 
 ;; Variable Declaration, Assignment and Expansion
@@ -602,6 +629,13 @@
   .
   (_)
 )
+
+; zsh: $#var (array length) — must be a leaf to prevent $#{var} mangling
+(simple_expansion
+  "$"
+  "#"
+  (variable_name)
+) @leaf
 
 ; Convert (simple_expansion) into (expansion)s
 (simple_expansion
