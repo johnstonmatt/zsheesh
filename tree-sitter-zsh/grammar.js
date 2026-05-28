@@ -1167,7 +1167,7 @@ module.exports = grammar({
     )),
 
     _c_terminator: _ => choice(';', /\n/, '&'),
-    _terminator: _ => choice(';', ';;', /\n/, '&'),
+    _terminator: _ => choice(';', ';;', /\n/, '&', '&!'),
   },
 });
 

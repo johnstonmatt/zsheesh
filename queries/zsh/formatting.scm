@@ -325,6 +325,13 @@
   "&" @prepend_space @append_spaced_softline
 )
 
+; Zsh background+disown operator
+(_
+  [(command) (list) (pipeline) (compound_statement) (subshell) (redirected_statement)]
+  .
+  "&!" @prepend_space @append_spaced_softline
+)
+
 ; Spaces between command and its arguments
 (command
   (_) @append_space
@@ -539,7 +546,23 @@
 (
   (declaration_command)
   .
-  (_) @prepend_hardline
+  [
+    (command)
+    (declaration_command)
+    (function_definition)
+    (if_statement)
+    (for_statement)
+    (while_statement)
+    (case_statement)
+    (pipeline)
+    (list)
+    (redirected_statement)
+    (subshell)
+    (compound_statement)
+    (variable_assignment)
+    (c_style_for_statement)
+    (unset_command)
+  ] @prepend_hardline
 )
 
 (declaration_command
@@ -551,6 +574,11 @@
     (variable_name)
     (variable_assignment)
   ] @prepend_space
+)
+
+; Spaces between unset keyword and variable names
+(unset_command
+  (variable_name) @prepend_space
 )
 
 (declaration_command
