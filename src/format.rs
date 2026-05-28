@@ -1,6 +1,5 @@
 use std::fmt;
 use std::io;
-use std::path::Path;
 
 use topiary_core::{FormatterError, Language, Operation, TopiaryQuery, Visualisation, formatter};
 
@@ -99,42 +98,6 @@ impl ZshFormatter {
         errors
     }
 
-    /// Returns line ranges (0-indexed, inclusive) of top-level statements that
-    /// contain parse errors. Used for auto-protecting unparseable regions.
-    pub fn error_line_ranges(&self, input: &str) -> Vec<(usize, usize)> {
-        let mut parser = tree_sitter::Parser::new();
-        parser
-            .set_language(&tree_sitter_zsh::LANGUAGE.into())
-            .expect("zsh grammar is valid");
-
-        let Some(tree) = parser.parse(input, None) else {
-            let line_count = input.lines().count();
-            return vec![(0, line_count.saturating_sub(1))];
-        };
-
-        let root = tree.root_node();
-        if !root.has_error() {
-            return vec![];
-        }
-
-        let mut ranges = Vec::new();
-        collect_error_ranges(root, &mut ranges);
-
-        // Merge overlapping ranges
-        ranges.sort();
-        let mut merged: Vec<(usize, usize)> = Vec::new();
-        for (start, end) in ranges {
-            if let Some(last) = merged.last_mut()
-                && start <= last.1 + 1
-            {
-                last.1 = last.1.max(end);
-                continue;
-            }
-            merged.push((start, end));
-        }
-        merged
-    }
-
     pub fn format_str(&self, input: &str) -> Result<String, ZshFormatterError> {
         let mut output = Vec::new();
         let mut reader = input.as_bytes();
@@ -150,27 +113,9 @@ impl ZshFormatter {
         Ok(String::from_utf8(output).expect("topiary produces valid UTF-8"))
     }
 
-    pub fn safe_format_str(&self, input: &str) -> Result<String, ZshFormatterError> {
-        let errors = self.check_parse_errors(input);
-        if !errors.is_empty() {
-            return Err(ZshFormatterError::ParseError(errors));
-        }
-        self.format_str(input)
-    }
-
-    pub fn format_file(&self, path: &Path) -> Result<String, ZshFormatterError> {
-        let content = std::fs::read_to_string(path)?;
-        self.format_str(&content)
-    }
-
     pub fn check_str(&self, input: &str) -> Result<bool, ZshFormatterError> {
         let formatted = self.format_str(input)?;
         Ok(input == formatted)
-    }
-
-    pub fn check_file(&self, path: &Path) -> Result<bool, ZshFormatterError> {
-        let content = std::fs::read_to_string(path)?;
-        self.check_str(&content)
     }
 
     pub fn dump_ast(&self, input: &str) -> Result<String, ZshFormatterError> {
@@ -191,27 +136,6 @@ impl ZshFormatter {
 impl Default for ZshFormatter {
     fn default() -> Self {
         Self::new().expect("default formatter should initialize")
-    }
-}
-
-fn collect_error_ranges(node: tree_sitter::Node, ranges: &mut Vec<(usize, usize)>) {
-    if node.is_error() || node.is_missing() {
-        // Walk up to the nearest top-level statement (child of `program`)
-        let mut ancestor = node;
-        while let Some(parent) = ancestor.parent() {
-            if parent.kind() == "program" {
-                break;
-            }
-            ancestor = parent;
-        }
-        let start = ancestor.start_position().row;
-        let end = ancestor.end_position().row;
-        ranges.push((start, end));
-        return;
-    }
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_error_ranges(child, ranges);
     }
 }
 
