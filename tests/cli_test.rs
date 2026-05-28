@@ -134,8 +134,8 @@ fn check_mode_with_file() {
 
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(
-        stderr.contains("would reformat"),
-        "Should report file: got {stderr}"
+        stderr.contains("test.zsh"),
+        "Should list the file: got {stderr}"
     );
 }
 
@@ -236,4 +236,104 @@ fn multiple_files() {
         .expect("failed to spawn zsheesh");
 
     assert!(output.status.success());
+}
+
+#[test]
+fn directory_finds_zsh_files() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.zsh"), "if [ -f x ]; then\necho y\nfi\n").unwrap();
+    std::fs::write(dir.path().join("b.zsh"), "echo b\n").unwrap();
+    std::fs::write(dir.path().join("c.txt"), "not a zsh file\n").unwrap();
+
+    let output = zsheesh_bin()
+        .arg("-w")
+        .arg(dir.path().to_str().unwrap())
+        .output()
+        .expect("failed to spawn zsheesh");
+
+    assert!(output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("a.zsh"), "Should list a.zsh: got {stderr}");
+    assert!(stderr.contains("b.zsh"), "Should list b.zsh: got {stderr}");
+    assert!(
+        !stderr.contains("c.txt"),
+        "Should not list c.txt: got {stderr}"
+    );
+}
+
+#[test]
+fn directory_recursive() {
+    let dir = tempfile::tempdir().unwrap();
+    let sub = dir.path().join("subdir");
+    std::fs::create_dir(&sub).unwrap();
+    std::fs::write(dir.path().join("top.zsh"), "echo top\n").unwrap();
+    std::fs::write(sub.join("nested.zsh"), "echo nested\n").unwrap();
+
+    let output = zsheesh_bin()
+        .arg("--check")
+        .arg(dir.path().to_str().unwrap())
+        .output()
+        .expect("failed to spawn zsheesh");
+
+    assert!(output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("top.zsh"),
+        "Should find top-level: got {stderr}"
+    );
+    assert!(
+        stderr.contains("nested.zsh"),
+        "Should find nested: got {stderr}"
+    );
+}
+
+#[test]
+fn directory_skips_dotdirs() {
+    let dir = tempfile::tempdir().unwrap();
+    let hidden = dir.path().join(".hidden");
+    std::fs::create_dir(&hidden).unwrap();
+    std::fs::write(dir.path().join("visible.zsh"), "echo visible\n").unwrap();
+    std::fs::write(hidden.join("secret.zsh"), "echo secret\n").unwrap();
+
+    let output = zsheesh_bin()
+        .arg("--check")
+        .arg(dir.path().to_str().unwrap())
+        .output()
+        .expect("failed to spawn zsheesh");
+
+    assert!(output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("visible.zsh"),
+        "Should find visible.zsh: got {stderr}"
+    );
+    assert!(
+        !stderr.contains("secret.zsh"),
+        "Should skip .hidden/secret.zsh: got {stderr}"
+    );
+}
+
+#[test]
+fn directory_check_detects_unformatted() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("ok.zsh"), "echo ok\n").unwrap();
+    std::fs::write(
+        dir.path().join("bad.zsh"),
+        "if [ -f x ]; then\necho y\nfi\n",
+    )
+    .unwrap();
+
+    let output = zsheesh_bin()
+        .arg("--check")
+        .arg(dir.path().to_str().unwrap())
+        .output()
+        .expect("failed to spawn zsheesh");
+
+    assert!(
+        !output.status.success(),
+        "--check should fail for unformatted dir"
+    );
 }

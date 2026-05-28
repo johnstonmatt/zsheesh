@@ -186,7 +186,7 @@ fn e2e_file_workflow() {
         .unwrap();
     assert!(!output.status.success(), "--check should fail");
     let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("would reformat"));
+    assert!(stderr.contains("script.zsh"));
 
     // Step 2: Format in-place with -w
     let output = zsheesh()
