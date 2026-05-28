@@ -76,10 +76,10 @@ fn collect_zsh_files_recursive(
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
-            if path
+            let dominated_by_vcs = path
                 .file_name()
-                .is_some_and(|n| n.to_str().is_some_and(|s| s.starts_with('.')))
-            {
+                .is_some_and(|n| matches!(n.to_str(), Some(".git" | ".svn" | ".hg")));
+            if dominated_by_vcs {
                 continue;
             }
             collect_zsh_files_recursive(&path, files)?;

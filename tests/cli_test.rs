@@ -290,12 +290,12 @@ fn directory_recursive() {
 }
 
 #[test]
-fn directory_skips_dotdirs() {
+fn directory_skips_vcs_dirs() {
     let dir = tempfile::tempdir().unwrap();
-    let hidden = dir.path().join(".hidden");
-    std::fs::create_dir(&hidden).unwrap();
+    let git = dir.path().join(".git");
+    std::fs::create_dir(&git).unwrap();
     std::fs::write(dir.path().join("visible.zsh"), "echo visible\n").unwrap();
-    std::fs::write(hidden.join("secret.zsh"), "echo secret\n").unwrap();
+    std::fs::write(git.join("hook.zsh"), "echo hook\n").unwrap();
 
     let output = zsheesh_bin()
         .arg("--check")
@@ -311,8 +311,30 @@ fn directory_skips_dotdirs() {
         "Should find visible.zsh: got {stderr}"
     );
     assert!(
-        !stderr.contains("secret.zsh"),
-        "Should skip .hidden/secret.zsh: got {stderr}"
+        !stderr.contains("hook.zsh"),
+        "Should skip .git/hook.zsh: got {stderr}"
+    );
+}
+
+#[test]
+fn directory_traverses_dotconfig() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join(".config");
+    std::fs::create_dir(&config).unwrap();
+    std::fs::write(config.join("init.zsh"), "echo init\n").unwrap();
+
+    let output = zsheesh_bin()
+        .arg("--check")
+        .arg(dir.path().to_str().unwrap())
+        .output()
+        .expect("failed to spawn zsheesh");
+
+    assert!(output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("init.zsh"),
+        "Should find .config/init.zsh: got {stderr}"
     );
 }
 
