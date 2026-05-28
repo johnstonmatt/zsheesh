@@ -934,8 +934,6 @@ module.exports = grammar({
     ),
 
     // ${(flags)name} — zsh parameter expansion flags
-    // flags: single letters like k, v, f, o, O, U, L, C, @
-    //        or with separators like j:sep: or s:sep:
     zsh_flags_expansion: $ => seq(
       token.immediate('('),
       field('flags', $.zsh_expansion_flags),
@@ -956,6 +954,7 @@ module.exports = grammar({
       )),
     ),
 
+    // Flag characters (k, v, f, @, …) and key:sep: patterns
     zsh_expansion_flags: $ => repeat1(
       choice(
         /[a-zA-Z@#%^~]/,

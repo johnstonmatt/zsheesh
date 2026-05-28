@@ -11,20 +11,15 @@
 const fs = require("fs");
 
 // ---------------------------------------------------------------------------
-// Patch definitions
+// Zsh grammar rules — added to the grammar alongside the bash rules
 // ---------------------------------------------------------------------------
-// Each patch is one of:
-//   { type: "replace", find: <string|RegExp>, replacement: <string> }
-//   { type: "insert_after", anchor: <string>, content: <string> }
-//   { type: "insert_before", anchor: <string>, content: <string> }
-//
-// verify: regex that must match after the patch is applied.
 
-const ZSH_RULES = `\
-    // \${(flags)name} — zsh parameter expansion flags
-    // flags: single letters like k, v, f, o, O, U, L, C, @
-    //        or with separators like j:sep: or s:sep:
-    zsh_flags_expansion: $ => seq(
+const zshGrammarRules = [
+  {
+    name: "zsh_flags_expansion",
+    doc: "${(flags)name} — zsh parameter expansion flags",
+    params: ["$"],
+    body: `seq(
       token.immediate('('),
       field('flags', $.zsh_expansion_flags),
       ')',
@@ -42,16 +37,40 @@ const ZSH_RULES = `\
         $._expansion_max_length,
         $._expansion_operator,
       )),
-    ),
-
-    zsh_expansion_flags: $ => repeat1(
+    )`,
+  },
+  {
+    name: "zsh_expansion_flags",
+    doc: "Flag characters (k, v, f, @, …) and key:sep: patterns",
+    params: ["$"],
+    body: `repeat1(
       choice(
         /[a-zA-Z@#%^~]/,
         seq(/[a-zA-Z]/, ':', /[^:]*/, ':'),
       ),
-    ),
+    )`,
+  },
+];
 
-`;
+// ---------------------------------------------------------------------------
+// Patch definitions
+// ---------------------------------------------------------------------------
+// Each patch is one of:
+//   { type: "replace",       find: <RegExp>,  replacement: <string> }
+//   { type: "insert_after",  anchor: <string>, content: <string> }
+//   { type: "insert_before", anchor: <string>, content: <string> }
+//
+// verify: regex that must match after the patch is applied.
+
+function renderRules(rules) {
+  return rules
+    .map((r) => {
+      const sig = `${r.name}: ${r.params.join(", ")} =>`;
+      const lines = [`    // ${r.doc}`, `    ${sig} ${r.body},`, ""];
+      return lines.join("\n");
+    })
+    .join("\n");
+}
 
 const patches = [
   {
@@ -81,7 +100,7 @@ const patches = [
     name: "zsh grammar rules",
     type: "insert_before",
     anchor: "    _expansion_expression: $ =>",
-    content: ZSH_RULES,
+    content: renderRules(zshGrammarRules) + "\n",
     verify: /zsh_flags_expansion: \$ => seq/,
   },
   {
