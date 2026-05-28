@@ -11,6 +11,14 @@ pub enum ZshFormatterError {
     Io(io::Error),
     Formatter(FormatterError),
     Query(String),
+    ParseError(Vec<ParseErrorInfo>),
+}
+
+#[derive(Debug, Clone)]
+pub struct ParseErrorInfo {
+    pub line: usize,
+    pub column: usize,
+    pub text: String,
 }
 
 impl fmt::Display for ZshFormatterError {
@@ -19,6 +27,13 @@ impl fmt::Display for ZshFormatterError {
             Self::Io(e) => write!(f, "IO error: {e}"),
             Self::Formatter(e) => write!(f, "Formatter error: {e}"),
             Self::Query(e) => write!(f, "Query error: {e}"),
+            Self::ParseError(errors) => {
+                write!(f, "parse errors detected ({} error(s)):", errors.len())?;
+                for e in errors {
+                    write!(f, "\n  line {}:{}: {}", e.line, e.column, e.text)?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -39,7 +54,6 @@ impl From<FormatterError> for ZshFormatterError {
 
 pub struct ZshFormatter {
     language: Language,
-    tolerate_parsing_errors: bool,
 }
 
 impl ZshFormatter {
@@ -57,15 +71,32 @@ impl ZshFormatter {
             grammar,
             indent: Some(indent.to_owned()),
         };
-        Ok(Self {
-            language,
-            tolerate_parsing_errors: true,
-        })
+        Ok(Self { language })
     }
 
-    pub fn tolerate_parsing_errors(mut self, yes: bool) -> Self {
-        self.tolerate_parsing_errors = yes;
-        self
+    pub fn check_parse_errors(&self, input: &str) -> Vec<ParseErrorInfo> {
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_bash::LANGUAGE.into())
+            .expect("bash grammar is valid");
+
+        let Some(tree) = parser.parse(input, None) else {
+            return vec![ParseErrorInfo {
+                line: 1,
+                column: 0,
+                text: "failed to parse".to_owned(),
+            }];
+        };
+
+        let root = tree.root_node();
+        if !root.has_error() {
+            return vec![];
+        }
+
+        let lines: Vec<&str> = input.lines().collect();
+        let mut errors = Vec::new();
+        collect_errors(root, &lines, &mut errors);
+        errors
     }
 
     pub fn format_str(&self, input: &str) -> Result<String, ZshFormatterError> {
@@ -77,10 +108,18 @@ impl ZshFormatter {
             &self.language,
             Operation::Format {
                 skip_idempotence: false,
-                tolerate_parsing_errors: self.tolerate_parsing_errors,
+                tolerate_parsing_errors: true,
             },
         )?;
         Ok(String::from_utf8(output).expect("topiary produces valid UTF-8"))
+    }
+
+    pub fn safe_format_str(&self, input: &str) -> Result<String, ZshFormatterError> {
+        let errors = self.check_parse_errors(input);
+        if !errors.is_empty() {
+            return Err(ZshFormatterError::ParseError(errors));
+        }
+        self.format_str(input)
     }
 
     pub fn format_file(&self, path: &Path) -> Result<String, ZshFormatterError> {
@@ -116,5 +155,27 @@ impl ZshFormatter {
 impl Default for ZshFormatter {
     fn default() -> Self {
         Self::new().expect("default formatter should initialize")
+    }
+}
+
+fn collect_errors(node: tree_sitter::Node, lines: &[&str], errors: &mut Vec<ParseErrorInfo>) {
+    if node.is_error() || node.is_missing() {
+        let start = node.start_position();
+        let line = start.row + 1;
+        let col = start.column;
+        let text = lines
+            .get(start.row)
+            .map(|l| l.trim().to_owned())
+            .unwrap_or_default();
+        errors.push(ParseErrorInfo {
+            line,
+            column: col,
+            text,
+        });
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_errors(child, lines, errors);
     }
 }

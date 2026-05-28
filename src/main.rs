@@ -39,10 +39,16 @@ struct Cli {
     /// Indentation string (default: two spaces).
     #[arg(long, default_value = "  ")]
     indent: String,
+
+    /// Format even when parse errors are detected.
+    /// By default, files with parse errors are skipped to prevent destructive formatting.
+    #[arg(long)]
+    force: bool,
 }
 
 const GREY: &str = "\x1b[90m";
 const WHITE: &str = "\x1b[97m";
+const YELLOW: &str = "\x1b[33m";
 const RESET: &str = "\x1b[0m";
 
 fn collect_zsh_files(path: &PathBuf) -> Result<Vec<PathBuf>, ZshFormatterError> {
@@ -94,6 +100,25 @@ fn collect_zsh_files_recursive(
     Ok(())
 }
 
+fn format_input(
+    formatter: &ZshFormatter,
+    input: &str,
+    force: bool,
+) -> Result<Option<String>, ZshFormatterError> {
+    let (protected_input, protected_regions) = protect_regions(input);
+
+    if !force {
+        let errors = formatter.check_parse_errors(&protected_input);
+        if !errors.is_empty() {
+            return Err(ZshFormatterError::ParseError(errors));
+        }
+    }
+
+    let formatted = formatter.format_str(&protected_input)?;
+    let restored = restore_regions(&formatted, &protected_regions);
+    Ok(Some(restored))
+}
+
 fn run() -> Result<ExitCode, ZshFormatterError> {
     let cli = Cli::parse();
     let use_color = io::stderr().is_terminal();
@@ -115,21 +140,35 @@ fn run() -> Result<ExitCode, ZshFormatterError> {
         }
 
         if cli.check {
-            let (protected_input, protected_regions) = protect_regions(&input);
-            let formatted = formatter.format_str(&protected_input)?;
-            let restored = restore_regions(&formatted, &protected_regions);
-            if input != restored {
-                return Ok(ExitCode::FAILURE);
+            match format_input(&formatter, &input, cli.force) {
+                Ok(Some(restored)) => {
+                    if input != restored {
+                        return Ok(ExitCode::FAILURE);
+                    }
+                }
+                Err(ZshFormatterError::ParseError(errors)) => {
+                    print_parse_errors("<stdin>", &errors, use_color);
+                    return Ok(ExitCode::FAILURE);
+                }
+                Err(e) => return Err(e),
+                Ok(None) => {}
             }
             return Ok(ExitCode::SUCCESS);
         }
 
-        let (protected_input, protected_regions) = protect_regions(&input);
-        let formatted = formatter.format_str(&protected_input)?;
-        let restored = restore_regions(&formatted, &protected_regions);
-        io::stdout()
-            .write_all(restored.as_bytes())
-            .map_err(ZshFormatterError::from)?;
+        match format_input(&formatter, &input, cli.force) {
+            Ok(Some(restored)) => {
+                io::stdout()
+                    .write_all(restored.as_bytes())
+                    .map_err(ZshFormatterError::from)?;
+            }
+            Err(ZshFormatterError::ParseError(errors)) => {
+                print_parse_errors("<stdin>", &errors, use_color);
+                return Ok(ExitCode::FAILURE);
+            }
+            Err(e) => return Err(e),
+            Ok(None) => {}
+        }
 
         return Ok(ExitCode::SUCCESS);
     }
@@ -140,49 +179,57 @@ fn run() -> Result<ExitCode, ZshFormatterError> {
     }
 
     let mut any_diff = false;
+    let mut any_errors = false;
 
     for path in &all_files {
         let content = std::fs::read_to_string(path)?;
+        let display = path.display().to_string();
 
         if cli.dump_ast {
             let ast = formatter.dump_ast(&content)?;
-            println!("=== {} ===", path.display());
+            println!("=== {display} ===");
             io::stdout()
                 .write_all(ast.as_bytes())
                 .map_err(ZshFormatterError::from)?;
             continue;
         }
 
-        let (protected_input, protected_regions) = protect_regions(&content);
-        let formatted = formatter.format_str(&protected_input)?;
-        let restored = restore_regions(&formatted, &protected_regions);
-        let changed = content != restored;
+        let result = format_input(&formatter, &content, cli.force);
 
-        if cli.check {
-            if changed {
-                print_path(&path.display().to_string(), true, use_color);
-                any_diff = true;
-            } else {
-                print_path(&path.display().to_string(), false, use_color);
+        match result {
+            Err(ZshFormatterError::ParseError(errors)) => {
+                print_parse_errors(&display, &errors, use_color);
+                any_errors = true;
+                continue;
             }
-            continue;
-        }
+            Err(e) => return Err(e),
+            Ok(None) => continue,
+            Ok(Some(restored)) => {
+                let changed = content != restored;
 
-        if cli.write {
-            if changed {
-                std::fs::write(path, &restored)?;
-                print_path(&path.display().to_string(), true, use_color);
-            } else {
-                print_path(&path.display().to_string(), false, use_color);
+                if cli.check {
+                    print_path(&display, changed, use_color);
+                    if changed {
+                        any_diff = true;
+                    }
+                    continue;
+                }
+
+                if cli.write {
+                    if changed {
+                        std::fs::write(path, &restored)?;
+                    }
+                    print_path(&display, changed, use_color);
+                } else {
+                    io::stdout()
+                        .write_all(restored.as_bytes())
+                        .map_err(ZshFormatterError::from)?;
+                }
             }
-        } else {
-            io::stdout()
-                .write_all(restored.as_bytes())
-                .map_err(ZshFormatterError::from)?;
         }
     }
 
-    if cli.check && any_diff {
+    if any_errors || (cli.check && any_diff) {
         return Ok(ExitCode::FAILURE);
     }
 
@@ -198,6 +245,20 @@ fn print_path(path: &str, changed: bool, use_color: bool) {
         }
     } else {
         eprintln!("{path}");
+    }
+}
+
+fn print_parse_errors(path: &str, errors: &[zsheesh::ParseErrorInfo], use_color: bool) {
+    if use_color {
+        eprintln!("{YELLOW}{path}{RESET}: skipped (parse errors)");
+        for e in errors {
+            eprintln!("  {YELLOW}line {}:{}{RESET}: {}", e.line, e.column, e.text);
+        }
+    } else {
+        eprintln!("{path}: skipped (parse errors)");
+        for e in errors {
+            eprintln!("  line {}:{}: {}", e.line, e.column, e.text);
+        }
     }
 }
 

@@ -667,7 +667,46 @@ corpus_e2e!(e2e_corpus_pipelines, "pipelines.zsh");
 corpus_e2e!(e2e_corpus_variables, "variables.zsh");
 corpus_e2e!(e2e_corpus_heredoc, "heredoc.zsh");
 corpus_e2e!(e2e_corpus_redirections, "redirections.zsh");
-corpus_e2e!(e2e_corpus_zsh_specific, "zsh_specific.zsh");
+// zsh_specific.zsh has parameter expansion flags that tree-sitter-bash cannot
+// parse, so the safe default correctly skips it.
+#[test]
+fn e2e_corpus_zsh_specific_skipped_by_default() {
+    let input = include_str!("../corpus/zsh_specific.zsh");
+    let (_, stderr, ok) = run_stdin(input);
+    assert!(!ok, "Should fail due to parse errors");
+    assert!(
+        stderr.contains("parse errors"),
+        "Should mention parse errors: {stderr}"
+    );
+}
+
+#[test]
+fn e2e_corpus_zsh_specific_with_force() {
+    let input = include_str!("../corpus/zsh_specific.zsh");
+    let mut child = zsheesh()
+        .arg("--force")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn zsheesh");
+
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    drop(child.stdin.take());
+
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "--force should allow formatting despite parse errors"
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(!stdout.is_empty(), "Should produce output with --force");
+}
 corpus_e2e!(e2e_corpus_real_zshrc, "real_zshrc.zsh");
 corpus_e2e!(e2e_corpus_fmt_directives, "fmt_directives.zsh");
 
