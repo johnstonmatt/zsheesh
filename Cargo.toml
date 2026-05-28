@@ -2,8 +2,17 @@
 name = "zsheesh"
 version = "0.1.0"
 edition = "2024"
+description = "A zsh-aware code formatter, written in Rust"
+license = "MIT"
 
 [dependencies]
+clap = { version = "4", features = ["derive"] }
 topiary-core = "0.7.3"
+topiary-tree-sitter-facade = "0.7.3"
 tree-sitter = "0.26.9"
 tree-sitter-bash = "0.25.1"
+
+[dev-dependencies]
+insta = "1"
+pretty_assertions = "1"
+tempfile = "3"
