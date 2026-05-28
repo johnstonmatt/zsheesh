@@ -3,67 +3,25 @@
 // patch-grammar.js — apply zsh-specific changes to a tree-sitter-bash grammar.js
 //
 // Called by sync-from-bash.sh. Reads the file path from argv[2], patches in
-// place. Each transformation targets a specific, stable anchor in the bash
-// grammar so that minor upstream edits (new rules, comments, whitespace) don't
-// break the patch.
+// place. Each patch targets a stable anchor in the bash grammar so that minor
+// upstream edits don't break it.
 
 "use strict";
 
 const fs = require("fs");
-const path = require("path");
-
-const file = process.argv[2];
-if (!file) {
-  console.error("Usage: node patch-grammar.js <grammar.js>");
-  process.exit(1);
-}
-
-let src = fs.readFileSync(file, "utf8");
-const original = src;
 
 // ---------------------------------------------------------------------------
-// 1. Header: Bash → Zsh
+// Patch definitions
 // ---------------------------------------------------------------------------
-src = src.replace(
-  /\* @file Bash grammar for tree-sitter/,
-  "* @file Zsh grammar for tree-sitter (forked from tree-sitter-bash)"
-);
+// Each patch is one of:
+//   { type: "replace", find: <string|RegExp>, replacement: <string> }
+//   { type: "insert_after", anchor: <string>, content: <string> }
+//   { type: "insert_before", anchor: <string>, content: <string> }
+//
+// verify: regex that must match after the patch is applied.
 
-// ---------------------------------------------------------------------------
-// 2. Grammar name: 'bash' → 'zsh'
-// ---------------------------------------------------------------------------
-src = src.replace(/name: 'bash'/, "name: 'zsh'");
-
-// ---------------------------------------------------------------------------
-// 3. Add $.zsh_flags_expansion as first choice in _expansion_body
-//    Anchor: "_expansion_body: $ => choice("
-// ---------------------------------------------------------------------------
-const expansionBodyAnchor = "_expansion_body: $ => choice(";
-const idx3 = src.indexOf(expansionBodyAnchor);
-if (idx3 === -1) {
-  console.error("PATCH FAILED: could not find _expansion_body anchor");
-  process.exit(1);
-}
-const insertAt = idx3 + expansionBodyAnchor.length;
-src =
-  src.slice(0, insertAt) +
-  "\n      // Zsh parameter expansion flags: ${(flags)name}\n" +
-  "      $.zsh_flags_expansion," +
-  src.slice(insertAt);
-
-// ---------------------------------------------------------------------------
-// 4. Add zsh_flags_expansion and zsh_expansion_flags rules
-//    Anchor: the line "_expansion_expression: $ =>"
-//    We insert the new rules right before that line.
-// ---------------------------------------------------------------------------
-const expansionExprAnchor = "    _expansion_expression: $ =>";
-const idx4 = src.indexOf(expansionExprAnchor);
-if (idx4 === -1) {
-  console.error("PATCH FAILED: could not find _expansion_expression anchor");
-  process.exit(1);
-}
-
-const zshRules = `    // \${(flags)name} — zsh parameter expansion flags
+const ZSH_RULES = `\
+    // \${(flags)name} — zsh parameter expansion flags
     // flags: single letters like k, v, f, o, O, U, L, C, @
     //        or with separators like j:sep: or s:sep:
     zsh_flags_expansion: $ => seq(
@@ -95,39 +53,98 @@ const zshRules = `    // \${(flags)name} — zsh parameter expansion flags
 
 `;
 
-src = src.slice(0, idx4) + zshRules + src.slice(idx4);
-
-// ---------------------------------------------------------------------------
-// 5. Add '&!' to _terminator
-//    Anchor: "_terminator: _ => choice(';', ';;', /\\n/, '&')"
-// ---------------------------------------------------------------------------
-src = src.replace(
-  /_terminator: _ => choice\(';', ';;', \/\\n\/, '&'\)/,
-  "_terminator: _ => choice(';', ';;', /\\n/, '&', '&!')"
-);
-
-// ---------------------------------------------------------------------------
-// Verify all patches applied
-// ---------------------------------------------------------------------------
-const checks = [
-  ["header", /Zsh grammar for tree-sitter/],
-  ["name", /name: 'zsh'/],
-  ["zsh_flags_expansion ref", /\$\.zsh_flags_expansion/],
-  ["zsh_flags_expansion rule", /zsh_flags_expansion: \$ => seq/],
-  ["zsh_expansion_flags rule", /zsh_expansion_flags: \$ => repeat1/],
-  ["&! terminator", /'&!'/],
+const patches = [
+  {
+    name: "header",
+    type: "replace",
+    find: /\* @file Bash grammar for tree-sitter/,
+    replacement: "* @file Zsh grammar for tree-sitter (forked from tree-sitter-bash)",
+    verify: /Zsh grammar for tree-sitter/,
+  },
+  {
+    name: "grammar name",
+    type: "replace",
+    find: /name: 'bash'/,
+    replacement: "name: 'zsh'",
+    verify: /name: 'zsh'/,
+  },
+  {
+    name: "zsh_flags_expansion choice",
+    type: "insert_after",
+    anchor: "_expansion_body: $ => choice(",
+    content:
+      "\n      // Zsh parameter expansion flags: ${(flags)name}\n" +
+      "      $.zsh_flags_expansion,",
+    verify: /\$\.zsh_flags_expansion/,
+  },
+  {
+    name: "zsh grammar rules",
+    type: "insert_before",
+    anchor: "    _expansion_expression: $ =>",
+    content: ZSH_RULES,
+    verify: /zsh_flags_expansion: \$ => seq/,
+  },
+  {
+    name: "&! terminator",
+    type: "replace",
+    find: /_terminator: _ => choice\(';', ';;', \/\\n\/, '&'\)/,
+    replacement: "_terminator: _ => choice(';', ';;', /\\n/, '&', '&!')",
+    verify: /'&!'/,
+  },
 ];
 
-let ok = true;
-for (const [label, re] of checks) {
-  if (!re.test(src)) {
-    console.error(`PATCH VERIFY FAILED: ${label} not found after patching`);
-    ok = false;
-  }
+// ---------------------------------------------------------------------------
+// Apply
+// ---------------------------------------------------------------------------
+
+const file = process.argv[2];
+if (!file) {
+  console.error("Usage: node patch-grammar.js <grammar.js>");
+  process.exit(1);
 }
 
-if (!ok) {
-  process.exit(1);
+let src = fs.readFileSync(file, "utf8");
+const original = src;
+
+for (const patch of patches) {
+  switch (patch.type) {
+    case "replace": {
+      const before = src;
+      src = src.replace(patch.find, patch.replacement);
+      if (src === before) {
+        console.error(`PATCH FAILED [${patch.name}]: pattern not found`);
+        process.exit(1);
+      }
+      break;
+    }
+    case "insert_after": {
+      const idx = src.indexOf(patch.anchor);
+      if (idx === -1) {
+        console.error(`PATCH FAILED [${patch.name}]: anchor not found: ${patch.anchor}`);
+        process.exit(1);
+      }
+      const pos = idx + patch.anchor.length;
+      src = src.slice(0, pos) + patch.content + src.slice(pos);
+      break;
+    }
+    case "insert_before": {
+      const idx = src.indexOf(patch.anchor);
+      if (idx === -1) {
+        console.error(`PATCH FAILED [${patch.name}]: anchor not found: ${patch.anchor}`);
+        process.exit(1);
+      }
+      src = src.slice(0, idx) + patch.content + src.slice(idx);
+      break;
+    }
+    default:
+      console.error(`Unknown patch type: ${patch.type}`);
+      process.exit(1);
+  }
+
+  if (!patch.verify.test(src)) {
+    console.error(`PATCH VERIFY FAILED [${patch.name}]`);
+    process.exit(1);
+  }
 }
 
 if (src === original) {
@@ -137,4 +154,4 @@ if (src === original) {
 fs.writeFileSync(file, src);
 
 const added = src.split("\n").length - original.split("\n").length;
-console.log(`Patched ${file} (+${added} lines, ${checks.length} checks passed)`);
+console.log(`Patched ${file} (+${added} lines, ${patches.length} patches applied)`);
