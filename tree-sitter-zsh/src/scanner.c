@@ -867,6 +867,63 @@ extglob_pattern:
             skip(lexer);
         }
 
+        // zsh: (pattern|pattern)glob — glob alternation group
+        // Scan ahead to check if ( starts a glob alternation followed by a glob suffix.
+        // If so, consume the entire (pattern|pattern) as an extglob_pattern token.
+        if (lexer->lookahead == '(') {
+            lexer->mark_end(lexer);
+            advance(lexer);
+            // Scan through the contents looking for | and )
+            uint32_t depth = 1;
+            bool has_pipe = false;
+            bool valid = true;
+            while (depth > 0 && !lexer->eof(lexer)) {
+                if (lexer->lookahead == '(') {
+                    depth++;
+                } else if (lexer->lookahead == ')') {
+                    depth--;
+                    if (depth == 0) break;
+                } else if (lexer->lookahead == '|' && depth == 1) {
+                    has_pipe = true;
+                } else if (lexer->lookahead == '\n' || lexer->lookahead == ';') {
+                    valid = false;
+                    break;
+                }
+                advance(lexer);
+            }
+            // Must have seen at least one | and end with )
+            if (valid && has_pipe && depth == 0 && lexer->lookahead == ')') {
+                advance(lexer); // consume the closing )
+                // Check if followed by glob suffix (non-whitespace, non-paren)
+                if (lexer->lookahead == '*' || lexer->lookahead == '?' ||
+                    iswalnum(lexer->lookahead) || lexer->lookahead == '[' ||
+                    lexer->lookahead == '.') {
+                    // Consume the glob suffix characters up to ) or whitespace
+                    while (!lexer->eof(lexer) && !iswspace(lexer->lookahead) &&
+                           lexer->lookahead != ')' && lexer->lookahead != ';' &&
+                           lexer->lookahead != '&' && lexer->lookahead != '|' &&
+                           lexer->lookahead != '\n') {
+                        advance(lexer);
+                    }
+                    lexer->mark_end(lexer);
+                    lexer->result_symbol = EXTGLOB_PATTERN;
+                    return true;
+                }
+                // (pattern|pattern) without glob suffix — also valid as extglob
+                // but only if followed by ) (case closer) to disambiguate from subshell
+                if (lexer->lookahead == ')') {
+                    lexer->mark_end(lexer);
+                    lexer->result_symbol = EXTGLOB_PATTERN;
+                    return true;
+                }
+            }
+            // Not a valid glob alternation — fall through to normal handling
+            // Reset by not returning; the lexer state is advanced but we haven't
+            // called mark_end beyond the initial position, so we need to return false
+            // and let the parser try other tokens.
+            return false;
+        }
+
         if (lexer->lookahead == '?' || lexer->lookahead == '*' || lexer->lookahead == '+' || lexer->lookahead == '@' ||
             lexer->lookahead == '!' || lexer->lookahead == '-' || lexer->lookahead == ')' || lexer->lookahead == '\\' ||
             lexer->lookahead == '.' || lexer->lookahead == '[' || (iswalpha(lexer->lookahead))) {
@@ -1100,6 +1157,12 @@ expansion_word:
             if (lexer->lookahead == '(' && !(advanced_once || advance_once_space)) {
                 lexer->mark_end(lexer);
                 advance(lexer);
+                // zsh: if ( is immediately followed by } or ", it's a literal char
+                // not a group opener (e.g. ${VAR-(} )
+                if (lexer->lookahead == '}' || lexer->lookahead == '"') {
+                    lexer->result_symbol = EXPANSION_WORD;
+                    return false;
+                }
                 while (lexer->lookahead != ')' && !lexer->eof(lexer)) {
                     // if we find a $( or ${ assume this is valid and is
                     // a garbage concatenation of some weird word + an

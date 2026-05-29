@@ -39,6 +39,7 @@
   (pipeline)
   (redirected_statement)
   (subshell)
+  (unset_command)
   (variable_assignment)
   (while_statement)
 ] @allow_blank_line_before
@@ -70,11 +71,12 @@
     (for_statement)
     (function_definition)
     (if_statement)
+    (unset_command)
     (variable_assignment)
     (while_statement)
   ]
   .
-  [(command) (list) (pipeline) (subshell) (compound_statement) (redirected_statement)] @prepend_hardline
+  [(command) (list) (pipeline) (subshell) (compound_statement) (redirected_statement) (unset_command)] @prepend_hardline
 )
 
 ; Interpose a new line before variable declarations after other constructs
@@ -91,11 +93,13 @@
     (pipeline)
     (redirected_statement)
     (subshell)
+    (unset_command)
     (while_statement)
   ]
   .
   [
     (declaration_command)
+    (unset_command)
     (variable_assignment)
   ] @prepend_hardline
 )
@@ -178,6 +182,8 @@
     (compound_statement)
     (redirected_statement)
     (variable_assignment)
+    (unset_command)
+    (declaration_command)
   ] @append_begin_scope @append_empty_scoped_softline
   .
   _ @prepend_end_scope
@@ -193,6 +199,8 @@
     (compound_statement)
     (redirected_statement)
     (variable_assignment)
+    (unset_command)
+    (declaration_command)
   ] @append_begin_scope @append_empty_scoped_softline
   .
   _ @prepend_end_scope
@@ -208,6 +216,8 @@
     (compound_statement)
     (redirected_statement)
     (variable_assignment)
+    (unset_command)
+    (declaration_command)
   ] @append_begin_scope @append_empty_scoped_softline
   .
   _ @prepend_end_scope
@@ -226,6 +236,8 @@
     (compound_statement)
     (redirected_statement)
     (variable_assignment)
+    (unset_command)
+    (declaration_command)
   ] @append_begin_scope @append_empty_scoped_softline
   .
   _ @prepend_end_scope
@@ -244,6 +256,8 @@
     (compound_statement)
     (redirected_statement)
     (variable_assignment)
+    (unset_command)
+    (declaration_command)
   ] @append_begin_scope @append_empty_scoped_softline
   .
   _ @prepend_end_scope
@@ -261,6 +275,8 @@
     (compound_statement)
     (redirected_statement)
     (variable_assignment)
+    (unset_command)
+    (declaration_command)
   ] @append_begin_scope @append_empty_scoped_softline
   .
   _ @prepend_end_scope
@@ -279,6 +295,8 @@
     (compound_statement)
     (redirected_statement)
     (variable_assignment)
+    (unset_command)
+    (declaration_command)
   ] @append_begin_scope @append_empty_scoped_softline
   .
   _ @prepend_end_scope
@@ -296,6 +314,8 @@
     (compound_statement)
     (redirected_statement)
     (variable_assignment)
+    (unset_command)
+    (declaration_command)
   ] @append_begin_scope @append_empty_scoped_softline
   .
   _ @prepend_end_scope
@@ -311,6 +331,8 @@
     (compound_statement)
     (redirected_statement)
     (variable_assignment)
+    (unset_command)
+    (declaration_command)
   ] @append_begin_scope @append_empty_scoped_softline
   .
   _ @prepend_end_scope
@@ -635,6 +657,13 @@
   "$"
   "#"
   (variable_name)
+) @leaf
+
+; zsh: $var[idx] — subscript form must be preserved verbatim
+(simple_expansion
+  "$"
+  (variable_name)
+  "["
 ) @leaf
 
 ; Convert (simple_expansion) into (expansion)s
