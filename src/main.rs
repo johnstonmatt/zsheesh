@@ -17,8 +17,8 @@ use zsheesh::{ZshFormatter, ZshFormatterError, protect_regions, restore_regions}
                   glob qualifiers, anonymous functions, and more."
 )]
 struct Cli {
-    /// Files or directories to format. Reads from stdin if none provided.
-    /// Directories are searched recursively for .zsh files.
+    /// Files or directories to format. Defaults to current directory when
+    /// run interactively; reads from stdin when piped.
     #[arg()]
     paths: Vec<PathBuf>,
 
@@ -129,6 +129,17 @@ fn run() -> Result<ExitCode, ZshFormatterError> {
 
     let formatter = ZshFormatter::with_indent(&cli.indent)?;
 
+    if cli.paths.is_empty() && io::stdin().is_terminal() {
+        // No paths and stdin is a terminal: default to current directory
+        let all_files = collect_zsh_files(&PathBuf::from("."))?;
+        if all_files.is_empty() {
+            eprintln!("No zsh files found in current directory.");
+            return Ok(ExitCode::SUCCESS);
+        }
+        // Fall through to the file-processing loop below
+        return process_files(&formatter, &all_files, &cli, use_color);
+    }
+
     if cli.paths.is_empty() {
         let mut input = String::new();
         io::stdin()
@@ -182,10 +193,19 @@ fn run() -> Result<ExitCode, ZshFormatterError> {
         all_files.extend(collect_zsh_files(path)?);
     }
 
+    process_files(&formatter, &all_files, &cli, use_color)
+}
+
+fn process_files(
+    formatter: &ZshFormatter,
+    all_files: &[PathBuf],
+    cli: &Cli,
+    use_color: bool,
+) -> Result<ExitCode, ZshFormatterError> {
     let mut any_diff = false;
     let mut any_errors = false;
 
-    for path in &all_files {
+    for path in all_files {
         let content = std::fs::read_to_string(path)?;
         let display = path.display().to_string();
 
@@ -198,7 +218,7 @@ fn run() -> Result<ExitCode, ZshFormatterError> {
             continue;
         }
 
-        let result = format_input(&formatter, &content, cli.force);
+        let result = format_input(formatter, &content, cli.force);
 
         match result {
             Err(ZshFormatterError::ParseError(errors)) => {
