@@ -74,16 +74,20 @@ fn collect_zsh_files_recursive(
     let entries = std::fs::read_dir(dir)?;
     for entry in entries {
         let entry = entry?;
+        let ft = entry.file_type()?;
+        if ft.is_symlink() {
+            continue;
+        }
         let path = entry.path();
-        if path.is_dir() {
-            let dominated_by_vcs = path
+        if ft.is_dir() {
+            let skip = path
                 .file_name()
                 .is_some_and(|n| matches!(n.to_str(), Some(".git" | ".svn" | ".hg")));
-            if dominated_by_vcs {
+            if skip {
                 continue;
             }
             collect_zsh_files_recursive(&path, files)?;
-        } else if path.is_file() {
+        } else if ft.is_file() {
             let ext = path.extension().and_then(|e| e.to_str());
             let name = path.file_name().and_then(|n| n.to_str());
             if ext == Some("zsh")
