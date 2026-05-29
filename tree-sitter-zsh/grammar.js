@@ -53,6 +53,8 @@ module.exports = grammar({
     [$.function_definition, $.command_name],
     [$.pipeline],
     [$.zsh_flags_expansion, $._expansion_regex],
+    [$.simple_expansion],
+    [$.compound_statement, $._statements],
   ],
 
   inline: $ => [
@@ -222,6 +224,15 @@ module.exports = grammar({
         optional($._terminator),
         field('body', $.do_group),
       )),
+      // zsh: for var ( list ) command — short form without do/done
+      prec(2, seq(
+        'for',
+        field('variable', $._simple_variable_name),
+        '(',
+        field('value', repeat($._literal)),
+        ')',
+        field('body', choice($._statement, $.redirected_statement)),
+      )),
     ),
 
     c_style_for_statement: $ => seq(
@@ -354,14 +365,10 @@ module.exports = grammar({
     ),
 
     case_item: $ => seq(
-      choice(
-        seq(
-          optional('('),
-          field('value', choice($._literal, $._extglob_blob)),
-          repeat(seq('|', field('value', choice($._literal, $._extglob_blob)))),
-          ')',
-        ),
-      ),
+      optional('('),
+      field('value', choice($._literal, $._extglob_blob)),
+      repeat(seq('|', field('value', choice($._literal, $._extglob_blob)))),
+      ')',
       optional($._statements),
       prec(1, choice(
         field('termination', ';;'),
@@ -415,18 +422,37 @@ module.exports = grammar({
         ),
         field('redirect', optional($._redirect)),
       )),
+      // zsh: () { body } — anonymous function with parens (no name, no 'function' keyword)
+      prec(-1, seq(
+        '(', ')',
+        field(
+          'body',
+          choice(
+            $.compound_statement,
+            $.subshell,
+          ),
+        ),
+        field('redirect', optional($._redirect)),
+      )),
     )),
 
     compound_statement: $ => choice(
       seq(
         '{',
-        optional($._terminated_statement),
+        // zsh: allow last statement without terminator before }
+        optional(choice(
+          $._terminated_statement,
+          $._statements,
+        )),
         token(prec(-1, '}')),
         // zsh: optional always block
         optional(seq(
           'always',
           '{',
-          optional($._terminated_statement),
+          optional(choice(
+            $._terminated_statement,
+            $._statements,
+          )),
           token(prec(-1, '}')),
         )),
       ),
@@ -703,7 +729,7 @@ module.exports = grammar({
         $._expression,
       )),
       prec(PREC.UNARY, seq(
-        field('operator', tokenLiterals(1, '-', '+', '~')),
+        field('operator', tokenLiterals(1, '-', '+')),
         $._expression,
       )),
       prec.right(PREC.UNARY, seq(
@@ -749,6 +775,7 @@ module.exports = grammar({
       $.process_substitution,
       $.arithmetic_expansion,
       $.brace_expression,
+      $.zsh_glob_qualifier,
     ),
 
     arithmetic_expansion: $ => choice(
@@ -860,12 +887,21 @@ module.exports = grammar({
           alias($._special_character, $.word),
           alias($._comment_word, $.word),
           alias($._bare_dollar, '$'),
+          $.zsh_glob_qualifier,
         ),
       )),
       optional(seq($._concat, '$')),
     )),
 
     _special_character: _ => token(prec(-1, choice('{', '}', '[', ']'))),
+
+    // zsh: glob qualifiers — (N), (.), (Nm-1), (.N:h:r), (-.N:h) etc.
+    // Only matches via concatenation (no whitespace before it)
+    zsh_glob_qualifier: _ => token(prec(-3, seq(
+      '(',
+      repeat1(/[a-zA-Z0-9_.+\-:@#,^=]/),
+      ')',
+    ))),
 
     string: $ => seq(
       '"',
@@ -906,6 +942,15 @@ module.exports = grammar({
     simple_expansion: $ => seq(
       '$',
       choice(
+        // zsh: $var[idx] — array subscript without braces
+        seq(choice($._simple_variable_name, $.variable_name),
+          optional($._concat),
+          '[',
+          optional(/\([a-zA-Z]+\)/),
+          field('index', choice($._literal, $.binary_expression, $.unary_expression)),
+          optional($._concat),
+          ']',
+        ),
         $._simple_variable_name,
         $._multiline_variable_name,
         $._special_variable_name,
@@ -973,9 +1018,9 @@ module.exports = grammar({
         alias($._external_expansion_sym_hash, '#'),
         choice($.expansion, $.command_substitution),
       ),
-      // zsh: ${^var}, ${~var} — distribute/glob prefix operators
+      // zsh: ${^var}, ${^^var}, ${~var}, ${~~var} — distribute/glob prefix operators
       seq(
-        field('operator', choice(token.immediate('^'), token.immediate('~'))),
+        field('operator', choice(token.immediate('^^'), token.immediate('^'), token.immediate('~~'), token.immediate('~'))),
         choice($.variable_name, $._simple_variable_name, $._special_variable_name, $.subscript,
                $.expansion, $.command_substitution),
         optional(choice(
@@ -1095,6 +1140,9 @@ module.exports = grammar({
           $.raw_string,
           $.ansi_c_string,
           alias($._expansion_word, $.word),
+          // zsh: literal special chars in default values like ${VAR-(}
+          alias(token.immediate('('), $.word),
+          alias(token.immediate(')'), $.word),
         ),
       )),
     )),
@@ -1147,6 +1195,7 @@ module.exports = grammar({
         $.number,
         $.arithmetic_expansion,
         $.expansion,
+        $.simple_expansion,
         $.parenthesized_expression,
         $.command_substitution,
         alias($._expansion_max_length_binary_expression, $.binary_expression),
@@ -1285,7 +1334,7 @@ module.exports = grammar({
     )),
 
     _c_terminator: _ => choice(';', /\n/, '&'),
-    _terminator: _ => choice(';', ';;', /\n/, '&', '&!', '&|'),
+    _terminator: _ => choice(';', ';;', /\n/, seq('&', optional(';')), seq('&!', optional(';')), seq('&|', optional(';'))),
   },
 });
 

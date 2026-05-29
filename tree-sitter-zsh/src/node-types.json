@@ -88,6 +88,10 @@
       {
         "type": "word",
         "named": true
+      },
+      {
+        "type": "zsh_glob_qualifier",
+        "named": true
       }
     ]
   },
@@ -1264,6 +1268,10 @@
           {
             "type": "~",
             "named": false
+          },
+          {
+            "type": "~~",
+            "named": false
           }
         ]
       }
@@ -1353,6 +1361,10 @@
         "multiple": false,
         "required": true,
         "types": [
+          {
+            "type": "_statement",
+            "named": true
+          },
           {
             "type": "do_group",
             "named": true
@@ -1905,7 +1917,30 @@
   {
     "type": "simple_expansion",
     "named": true,
-    "fields": {},
+    "fields": {
+      "index": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "_primary_expression",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "concatenation",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          }
+        ]
+      }
+    },
     "children": {
       "multiple": false,
       "required": true,
@@ -3195,6 +3230,10 @@
     "named": false
   },
   {
+    "type": "zsh_glob_qualifier",
+    "named": true
+  },
+  {
     "type": "{",
     "named": false
   },
@@ -3220,6 +3259,10 @@
   },
   {
     "type": "~",
+    "named": false
+  },
+  {
+    "type": "~~",
     "named": false
   }
 ]
