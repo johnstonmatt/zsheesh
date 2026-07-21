@@ -1,0 +1,66 @@
+name: 'zsheesh'
+description: 'Check or format zsh shell scripts with zsheesh'
+author: 'johnstonmatt'
+branding:
+  icon: 'terminal'
+  color: 'blue'
+
+inputs:
+  path:
+    description: 'File(s) or directory(ies) to check/format (space-separated)'
+    required: false
+    default: '.'
+  mode:
+    description: "'check' fails the step if formatting is needed (default); 'write' formats in place"
+    required: false
+    default: 'check'
+  args:
+    description: 'Additional arguments passed through to zsheesh (e.g. --indent, --force)'
+    required: false
+    default: ''
+  version:
+    description: "zsheesh release version to install, e.g. 'v0.1.0' (default: latest)"
+    required: false
+    default: 'latest'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Try installing a released zsheesh binary
+      id: install_release
+      shell: bash
+      continue-on-error: true
+      run: |
+        if [ "${{ inputs.version }}" != "latest" ]; then
+          export ZSHEESH_VERSION="${{ inputs.version }}"
+        fi
+        curl -fsSL https://raw.githubusercontent.com/johnstonmatt/zsheesh/main/install.sh | sh
+
+    - name: Install Rust toolchain (source build fallback)
+      if: steps.install_release.outcome == 'failure'
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo build (source build fallback)
+      if: steps.install_release.outcome == 'failure'
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: zsheesh-action-cargo-${{ runner.os }}-${{ hashFiles(format('{0}/Cargo.lock', github.action_path)) }}
+
+    - name: Build zsheesh from source
+      if: steps.install_release.outcome == 'failure'
+      shell: bash
+      run: |
+        cargo install --path "${{ github.action_path }}" --locked
+        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+    - name: Run zsheesh
+      shell: bash
+      run: |
+        flag='--check'
+        if [ "${{ inputs.mode }}" = 'write' ]; then
+          flag='-w'
+        fi
+        zsheesh $flag ${{ inputs.args }} ${{ inputs.path }}

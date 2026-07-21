@@ -42,6 +42,19 @@ zsheesh --dump-ast ~/.zshrc
 
 Directories are searched recursively for `.zsh`, `.zshrc`, `.zshenv`, `.zprofile`, `.zlogin`, `.zlogout` files.
 
+### GitHub Action
+
+```yaml
+- uses: johnstonmatt/zsheesh@main
+  with:
+    path: .           # file(s)/dir(s) to check (default: .)
+    mode: check       # 'check' (default, fails on unformatted files) or 'write'
+    args: ''          # extra args, e.g. --indent '\t' or --force
+    version: latest   # zsheesh release to install (default: latest)
+```
+
+Installs a released binary if one is available, otherwise builds from source. `mode: check` fails the step if any file would be reformatted; `mode: write` formats in place (e.g. to auto-fix and commit).
+
 ### Escape hatches
 
 ```zsh

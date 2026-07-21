@@ -1,0 +1,83 @@
+name: Test Action
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test-action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Installed independently of the action under test, so it can serve as
+      # a known-good reference for what "correctly formatted" looks like.
+      # Also primes `cargo install`'s own bookkeeping, so the action's
+      # from-source fallback (which installs from the same path) detects the
+      # version is already installed instead of rebuilding it five more times below.
+      - name: Install zsheesh as the reference binary
+        run: cargo install --path . --locked
+
+      - name: Create fixtures
+        run: |
+          mkdir -p fixtures/clean fixtures/dirty fixtures/indent
+          cat > fixtures/dirty/script.zsh <<'EOF'
+          #!/bin/zsh
+          greet(){
+          echo "hello, $1"
+          }
+          greet "world"
+          EOF
+          cp fixtures/dirty/script.zsh fixtures/clean/script.zsh
+          zsheesh -w fixtures/clean/script.zsh
+          printf 'if [ -f x ]; then\necho y\nfi\n' > fixtures/indent/script.zsh
+
+      - name: Sanity check — reference binary agrees the clean fixture is a fixed point
+        run: zsheesh --check fixtures/clean
+
+      - name: Action / check mode passes on already-formatted input
+        uses: ./
+        with:
+          path: fixtures/clean
+
+      - name: Action / check mode fails on unformatted input
+        id: check_dirty
+        continue-on-error: true
+        uses: ./
+        with:
+          path: fixtures/dirty
+
+      - name: Assert check mode reported failure
+        run: |
+          if [ "${{ steps.check_dirty.outcome }}" != "failure" ]; then
+            echo "::error::expected the action to fail check mode on unformatted input, but it succeeded"
+            exit 1
+          fi
+
+      - name: Action / write mode formats in place
+        uses: ./
+        with:
+          path: fixtures/dirty
+          mode: write
+
+      - name: Assert write mode matches the reference formatting
+        run: diff fixtures/clean/script.zsh fixtures/dirty/script.zsh
+
+      - name: Action / check mode now passes after write
+        uses: ./
+        with:
+          path: fixtures/dirty
+
+      - name: Action / args are passed through to zsheesh
+        uses: ./
+        with:
+          path: fixtures/indent
+          mode: write
+          args: "--indent '    '"
+
+      - name: Assert custom indent argument was honored
+        run: grep -qF '    echo y' fixtures/indent/script.zsh
