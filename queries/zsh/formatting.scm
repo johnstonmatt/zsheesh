@@ -184,6 +184,12 @@
     (variable_assignment)
     (unset_command)
     (declaration_command)
+    (if_statement)
+    (case_statement)
+    (while_statement)
+    (for_statement)
+    (c_style_for_statement)
+    (function_definition)
   ] @append_begin_scope @append_empty_scoped_softline
   .
   _ @prepend_end_scope
@@ -201,6 +207,12 @@
     (variable_assignment)
     (unset_command)
     (declaration_command)
+    (if_statement)
+    (case_statement)
+    (while_statement)
+    (for_statement)
+    (c_style_for_statement)
+    (function_definition)
   ] @append_begin_scope @append_empty_scoped_softline
   .
   _ @prepend_end_scope
@@ -218,6 +230,12 @@
     (variable_assignment)
     (unset_command)
     (declaration_command)
+    (if_statement)
+    (case_statement)
+    (while_statement)
+    (for_statement)
+    (c_style_for_statement)
+    (function_definition)
   ] @append_begin_scope @append_empty_scoped_softline
   .
   _ @prepend_end_scope
@@ -238,6 +256,12 @@
     (variable_assignment)
     (unset_command)
     (declaration_command)
+    (if_statement)
+    (case_statement)
+    (while_statement)
+    (for_statement)
+    (c_style_for_statement)
+    (function_definition)
   ] @append_begin_scope @append_empty_scoped_softline
   .
   _ @prepend_end_scope
@@ -258,6 +282,12 @@
     (variable_assignment)
     (unset_command)
     (declaration_command)
+    (if_statement)
+    (case_statement)
+    (while_statement)
+    (for_statement)
+    (c_style_for_statement)
+    (function_definition)
   ] @append_begin_scope @append_empty_scoped_softline
   .
   _ @prepend_end_scope
@@ -277,6 +307,12 @@
     (variable_assignment)
     (unset_command)
     (declaration_command)
+    (if_statement)
+    (case_statement)
+    (while_statement)
+    (for_statement)
+    (c_style_for_statement)
+    (function_definition)
   ] @append_begin_scope @append_empty_scoped_softline
   .
   _ @prepend_end_scope
@@ -297,6 +333,12 @@
     (variable_assignment)
     (unset_command)
     (declaration_command)
+    (if_statement)
+    (case_statement)
+    (while_statement)
+    (for_statement)
+    (c_style_for_statement)
+    (function_definition)
   ] @append_begin_scope @append_empty_scoped_softline
   .
   _ @prepend_end_scope
@@ -316,6 +358,12 @@
     (variable_assignment)
     (unset_command)
     (declaration_command)
+    (if_statement)
+    (case_statement)
+    (while_statement)
+    (for_statement)
+    (c_style_for_statement)
+    (function_definition)
   ] @append_begin_scope @append_empty_scoped_softline
   .
   _ @prepend_end_scope
@@ -333,6 +381,12 @@
     (variable_assignment)
     (unset_command)
     (declaration_command)
+    (if_statement)
+    (case_statement)
+    (while_statement)
+    (for_statement)
+    (c_style_for_statement)
+    (function_definition)
   ] @append_begin_scope @append_empty_scoped_softline
   .
   _ @prepend_end_scope
@@ -431,15 +485,21 @@
   (_)
 )
 
+; `< <(cmd)` and `> >(cmd)`: the space is load-bearing. Without it `<<(` lexes
+; as a heredoc and `>>(` as an append to a file literally named "(cmd)".
+(file_redirect
+  (process_substitution) @prepend_space
+)
+
 (herestring_redirect (_) @prepend_space)
 
 ;; Conditionals
 
-[
-  (if_statement)
-  (elif_clause)
-  (else_clause)
-] @append_hardline
+; NOTE: compound statements do not append their own trailing hardline.
+; The break belongs to the enclosing block (the *_line_break scopes above), so
+; that a redirect after `done`/`fi`/`esac`/`}` stays on the same line. Appending
+; it here split `done < <(cmd)` across two lines, which silently turned the
+; redirect into a separate command and left the loop reading its parent stdin.
 
 [
   (if_statement)
@@ -520,7 +580,7 @@
   _
   "esac" @prepend_hardline @prepend_indent_end
   .
-) @append_hardline
+)
 
 (case_item
   ")" @append_hardline @append_indent_start
@@ -543,7 +603,7 @@
   _
   "done" @prepend_hardline @prepend_indent_end
   .
-) @append_hardline
+)
 
 (for_statement
   value: _* @prepend_space
@@ -575,7 +635,14 @@
 ;; Function Definitions
 
 (function_definition
-  body: (_) @prepend_space @append_hardline
+  body: (_) @prepend_space
+)
+
+; A redirect hangs off the definition itself: `f() { ... } >log`
+(function_definition
+  body: (_) @append_space
+  .
+  (_)
 )
 
 ; function keyword needs space after it
