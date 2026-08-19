@@ -860,3 +860,116 @@ fn preserves_blank_lines_between_blocks() {
         "Should preserve blank lines between commands"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Redirects on compound statements
+//
+// A break between the closing keyword and its redirect is not a style choice:
+// zsh reads the redirect as a separate command and leaves the loop reading its
+// parent's stdin, which hangs on a terminal. Losing the space in `< <(cmd)` is
+// the same class of damage — `<<(` lexes as a heredoc.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn keeps_process_substitution_redirect_spaced() {
+    let result = fmt("cat < <(cmd)\n");
+    assert!(
+        result.contains("< <("),
+        "`< <(` must keep its space or it lexes as a heredoc: got {result}"
+    );
+    assert_idempotent(&result);
+}
+
+#[test]
+fn keeps_output_process_substitution_redirect_spaced() {
+    let result = fmt("cmd > >(tee log)\n");
+    assert!(
+        result.contains("> >("),
+        "`> >(` must keep its space or it appends to a file named \"(tee log)\": got {result}"
+    );
+    assert_idempotent(&result);
+}
+
+#[test]
+fn keeps_redirect_on_done_line() {
+    let result = fmt("while read -r l; do\nprint \"$l\"\ndone < <(cmd)\n");
+    assert!(
+        result.contains("done < <(cmd)"),
+        "Redirect must stay on the `done` line: got {result}"
+    );
+    assert_idempotent(&result);
+}
+
+#[test]
+fn keeps_redirect_on_done_line_for_file() {
+    let result = fmt("while read -r x; do\nprint \"$x\"\ndone <\"$file\"\n");
+    assert!(
+        result.contains("done <\"$file\""),
+        "Redirect must stay on the `done` line: got {result}"
+    );
+    assert_idempotent(&result);
+}
+
+#[test]
+fn keeps_redirect_on_fi_line() {
+    let result = fmt("if true; then\nprint x\nfi >out.txt\n");
+    assert!(
+        result.contains("fi >out.txt"),
+        "Redirect must stay on the `fi` line: got {result}"
+    );
+    assert_idempotent(&result);
+}
+
+#[test]
+fn keeps_redirect_on_esac_line() {
+    let result = fmt("case $x in\na) print y ;;\nesac >out.txt\n");
+    assert!(
+        result.contains("esac >out.txt"),
+        "Redirect must stay on the `esac` line: got {result}"
+    );
+    assert_idempotent(&result);
+}
+
+#[test]
+fn keeps_redirect_on_function_body_line() {
+    let result = fmt("f() { print a; } >out.txt\n");
+    assert!(
+        result.contains("} >out.txt"),
+        "Redirect must stay on the function body's closing line: got {result}"
+    );
+    assert_idempotent(&result);
+}
+
+#[test]
+fn keeps_redirect_on_for_done_line() {
+    let result = fmt("for f in a b; do\nprint \"$f\"\ndone >out.txt\n");
+    assert!(
+        result.contains("done >out.txt"),
+        "Redirect must stay on the `done` line: got {result}"
+    );
+    assert_idempotent(&result);
+}
+
+// ---------------------------------------------------------------------------
+// Comment placement
+// ---------------------------------------------------------------------------
+
+#[test]
+fn keeps_own_line_comment_after_done() {
+    let result = fmt("while true; do\nx\ndone\n# own line\ny\n");
+    assert!(
+        result.contains("done\n# own line"),
+        "A comment on its own line must not be pulled onto the `done` line: got {result}"
+    );
+    assert_idempotent(&result);
+}
+
+#[test]
+fn keeps_trailing_comment_after_done() {
+    let result = fmt("while true; do x; done # trailing\n");
+    assert!(
+        result.contains("done # trailing"),
+        "A trailing comment must stay on the `done` line: got {result}"
+    );
+    assert_idempotent(&result);
+}
