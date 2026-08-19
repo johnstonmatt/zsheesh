@@ -47,7 +47,13 @@ runs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-        key: zsheesh-action-cargo-${{ runner.os }}-${{ hashFiles(format('{0}/Cargo.lock', github.action_path)) }}
+        # NOT hashFiles(): its glob is resolved relative to GITHUB_WORKSPACE, so
+        # it cannot read a file by absolute path — and github.action_path is an
+        # absolute path, ending in "/." when the action is used as `uses: ./`.
+        # The whole action template failed to evaluate, before any `if:` was
+        # considered, so every consumer hit "The template is not valid".
+        # action_ref pins the same thing the lockfile would: the action version.
+        key: zsheesh-action-cargo-${{ runner.os }}-${{ github.action_ref || github.sha }}
 
     - name: Build zsheesh from source
       if: steps.install_release.outcome == 'failure'
